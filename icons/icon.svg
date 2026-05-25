@@ -1,0 +1,33 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1e1040"/>
+      <stop offset="100%" stop-color="#0a0e1a"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="0.3" y1="0" x2="0.7" y2="1">
+      <stop offset="0%" stop-color="#e0aaff"/>
+      <stop offset="45%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Dark background -->
+  <rect width="128" height="128" rx="24" fill="url(#bg)"/>
+
+  <!-- Subtle purple border ring -->
+  <rect width="128" height="128" rx="24" fill="none" stroke="#8b5cf6" stroke-width="1.5" opacity="0.35"/>
+
+  <!-- Lightning bolt: bold, readable at 16px -->
+  <polygon
+    points="74,8 42,68 62,68 54,120 86,58 66,58"
+    fill="url(#bolt)"
+    filter="url(#glow)"
+  />
+</svg>

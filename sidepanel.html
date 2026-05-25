@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upwork Growth Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="logo-circle">⚡</div>
+      <div class="brand-text">
+        <h1>Upwork Growth</h1>
+        <span class="sub">Growth & Connects ROI Assistant</span>
+      </div>
+    </div>
+    <div id="license-badge" class="badge free-tier">Free Tier</div>
+  </header>
+
+  <!-- Tab Buttons -->
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="analyzer-tab">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+      Analyze
+    </button>
+    <button class="tab-btn" data-tab="optimizer-tab">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+      Optimize <span class="beta-badge">[Beta]</span>
+    </button>
+    <button class="tab-btn" data-tab="roi-tab">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      ROI Hub
+    </button>
+    <button class="tab-btn" data-tab="settings-tab">
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0"/></svg>
+      Settings
+    </button>
+  </nav>
+
+  <!-- Container for Panel Content -->
+  <main class="content-container">
+
+    <!-- 1. ANALYZER TAB -->
+    <section id="analyzer-tab" class="tab-panel active">
+      <!-- Status Notice -->
+      <div id="job-page-status" class="status-alert info">
+        <span class="status-dot"></span>
+        <span class="status-text">Detecting active Upwork job post...</span>
+      </div>
+
+      <!-- Scraped Job Header (Hidden initially) -->
+      <div id="job-details-card" class="card hide">
+        <h3 id="scraped-job-title" class="job-title-scraped">React Developer for SaaS Dashboard</h3>
+        <div class="job-meta-row">
+          <span id="scraped-job-client" class="meta-tag client hide"></span>
+          <span id="scraped-job-country" class="meta-tag country hide"></span>
+          <span id="scraped-job-connects" class="meta-tag connects">16 Connects</span>
+        </div>
+      </div>
+
+      <!-- ROI Calculator Display (Hidden initially) -->
+      <div id="roi-score-card" class="card hide">
+        <div class="score-display">
+          <div class="score-radial">
+            <svg class="progress-ring" width="80" height="80">
+              <circle class="progress-ring__circle-bg" stroke="#1e293b" stroke-width="6" fill="transparent" r="34" cx="40" cy="40"/>
+              <circle id="roi-progress" class="progress-ring__circle" stroke="#10b981" stroke-dasharray="213.6" stroke-dashoffset="213.6" stroke-width="6" fill="transparent" r="34" cx="40" cy="40"/>
+            </svg>
+            <div id="roi-number" class="score-text">--</div>
+          </div>
+          <div class="score-verdict">
+            <h4>Connects ROI Verdict</h4>
+            <div id="roi-label" class="verdict-tag" style="background-color: #eab308;">Analyzing...</div>
+          </div>
+        </div>
+
+        <div class="score-reasons">
+          <h5>Analysis Breakdown:</h5>
+          <div id="roi-reasons-list" class="roi-breakdown"></div>
+        </div>
+      </div>
+
+      <!-- Proposal Generation Block -->
+      <div id="proposal-generation-card" class="card hide">
+        <div class="form-group">
+          <label for="proposal-tone">Proposal Copywriting Tone</label>
+          <select id="proposal-tone" class="form-input">
+            <option value="conversational" selected>Conversational & Inquisitive (Highly Recommended)</option>
+            <option value="case-study">Proof & Case Study Focused</option>
+            <option value="technical">Technical Consultant (Detailed Specs)</option>
+          </select>
+        </div>
+
+        <button id="btn-generate-proposal" class="btn btn-primary btn-full">
+          <span>Generate Strategic Proposal <span class="beta-badge">[Beta]</span></span>
+          <div class="spinner hide" id="proposal-spinner"></div>
+        </button>
+      </div>
+
+      <!-- Result Card (Hidden initially) -->
+      <div id="proposal-result-card" class="card hide">
+        <div class="result-header">
+          <h4>Proposal Draft</h4>
+          <span class="copy-success-hint" id="proposal-copy-hint">Copied!</span>
+        </div>
+
+        <div class="proposal-output-area">
+          <div id="proposal-output-text" class="markdown-preview"></div>
+        </div>
+
+        <div class="btn-group">
+          <button id="btn-copy-hooks" class="btn btn-secondary">Copy Hooks</button>
+          <button id="btn-copy-proposal" class="btn btn-secondary">Copy Proposal</button>
+          <button id="btn-log-proposal" class="btn btn-success">Log to ROI Hub</button>
+        </div>
+      </div>
+
+      <!-- Fallback when no job page open -->
+      <div id="analyzer-fallback" class="fallback-panel">
+        <div class="fallback-icon">🔍</div>
+        <h3>No Job Post Detected</h3>
+        <p>Open an Upwork job description page or click on a job card in the feed, then press reload.</p>
+        <button id="btn-reload-job" class="btn btn-secondary">Scan Page</button>
+      </div>
+    </section>
+
+    <!-- 2. OPTIMIZER TAB -->
+    <section id="optimizer-tab" class="tab-panel">
+      <div id="profile-status" class="status-alert info">
+        <span class="status-dot"></span>
+        <span class="status-text">Detecting your Upwork profile page...</span>
+      </div>
+
+      <div id="profile-detected-card" class="card hide">
+        <h3 id="scraped-profile-title" class="profile-title-scraped">Fullstack Engineer</h3>
+        <p class="profile-meta">Targeting Profile SEO optimization.</p>
+      </div>
+
+      <div id="profile-control-card" class="card hide">
+        <div class="form-group">
+          <label for="optimizer-niche">Specific Niche Focus (Optional)</label>
+          <input type="text" id="optimizer-niche" class="form-input" placeholder="e.g. Next.js SaaS, Python Data Scraping">
+          <small class="help-text">Guides the AI rewrite to emphasize specific keywords.</small>
+        </div>
+
+        <button id="btn-optimize-profile" class="btn btn-primary btn-full">
+          <span>Perform Profile SEO Audit</span>
+          <div class="spinner hide" id="profile-spinner"></div>
+        </button>
+      </div>
+
+      <!-- Audit Result (Hidden initially) -->
+      <div id="profile-result-card" class="card hide">
+        <div class="result-header">
+          <h4>Optimization Audit</h4>
+          <span class="copy-success-hint" id="profile-copy-hint">Copied!</span>
+        </div>
+        <div class="proposal-output-area">
+          <div id="profile-output-text" class="markdown-preview"></div>
+        </div>
+        <button id="btn-copy-profile" class="btn btn-secondary btn-full">Copy Optimized Bio</button>
+      </div>
+
+      <!-- Fallback when no profile page open -->
+      <div id="optimizer-fallback" class="fallback-panel">
+        <div class="fallback-icon">👤</div>
+        <h3>No Profile Page Detected</h3>
+        <p>To optimize your profile, navigate to your Upwork profile edit page (e.g. /freelancers/~...) and press scan.</p>
+        <button id="btn-reload-profile" class="btn btn-secondary">Scan Page</button>
+      </div>
+    </section>
+
+    <!-- 3. ROI HUB TAB -->
+    <section id="roi-tab" class="tab-panel">
+      <!-- Analytics Grid -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-label">Spent Connects</span>
+          <span id="stat-total-connects" class="stat-value">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Proposals Logged</span>
+          <span id="stat-total-proposals" class="stat-value">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Interviews</span>
+          <span id="stat-total-interviews" class="stat-value">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Response Rate</span>
+          <span id="stat-conversion" class="stat-value">0%</span>
+        </div>
+      </div>
+
+      <!-- Proposal Logger Form -->
+      <div class="card">
+        <h4>Log Applied Proposal</h4>
+        <form id="proposal-log-form" class="log-form">
+          <div class="form-row">
+            <div class="form-group flex-2">
+              <label for="log-title">Job Title</label>
+              <input type="text" id="log-title" class="form-input" placeholder="e.g. API Development" required>
+            </div>
+            <div class="form-group flex-1">
+              <label for="log-connects">Connects Spent</label>
+              <input type="number" id="log-connects" class="form-input" value="16" min="1" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="log-boost">Boost Position</label>
+              <select id="log-boost" class="form-input">
+                <option value="none">Default (Unboosted)</option>
+                <option value="rank1">Rank 1 Bid</option>
+                <option value="rank2">Rank 2 Bid</option>
+                <option value="rank3">Rank 3 Bid</option>
+                <option value="rank4">Rank 4 Bid</option>
+              </select>
+            </div>
+            <div class="form-group flex-1">
+              <label for="log-status">Initial Status</label>
+              <select id="log-status" class="form-input">
+                <option value="applied">Applied</option>
+                <option value="interviewing">Interviewing</option>
+                <option value="hired">Hired</option>
+                <option value="rejected">Rejected / Closed</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-success btn-full">Add to History</button>
+        </form>
+      </div>
+
+      <!-- History Log -->
+      <div class="card">
+        <div class="card-header-row">
+          <h4>Proposal History Log</h4>
+          <button id="btn-clear-history" class="btn btn-danger-text">Clear All</button>
+        </div>
+        <div id="history-container" class="history-list">
+          <p class="empty-list-message">No proposals logged yet. Run analyses and click 'Log to ROI Hub' to record your bidding data.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. SETTINGS TAB -->
+    <section id="settings-tab" class="tab-panel">
+      <div class="card">
+        <h4>AI Provider Configuration</h4>
+        
+        <div class="form-group">
+          <label for="settings-provider">Primary AI Engine</label>
+          <select id="settings-provider" class="form-input">
+            <option value="anthropic" selected>Anthropic Claude (Persuasive Copywriting)</option>
+            <option value="gemini">Google Gemini (Speed & Analysis)</option>
+          </select>
+        </div>
+
+        <!-- Claude Config Block -->
+        <div id="anthropic-config-block" class="config-block">
+          <div class="form-group">
+            <label for="settings-anthropic-key">Anthropic Claude API Key</label>
+            <input type="password" id="settings-anthropic-key" class="form-input" placeholder="sk-ant-...">
+            <small class="help-text">Stores locally. Extension will query Anthropic direct endpoint.</small>
+          </div>
+          <div class="form-group">
+            <label for="settings-anthropic-model">Claude Model</label>
+            <select id="settings-anthropic-model" class="form-input">
+              <option value="claude-sonnet-4-6" selected>Claude Sonnet 4.6 (Latest · Best Quality)</option>
+              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Stable)</option>
+              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Fast & Affordable)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Gemini Config Block (Hidden initially) -->
+        <div id="gemini-config-block" class="config-block hide">
+          <div class="form-group">
+            <label for="settings-gemini-key">Google Gemini API Key</label>
+            <input type="password" id="settings-gemini-key" class="form-input" placeholder="AIzaSy...">
+            <small class="help-text">Stores locally. Key is sent directly to Google APIs.</small>
+          </div>
+          <div class="form-group">
+            <label for="settings-gemini-model">Gemini Model</label>
+            <select id="settings-gemini-model" class="form-input">
+              <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Super Fast)</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Deep Analytics)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Freelancer Context Card -->
+      <div class="card">
+        <h4>Your Professional Context</h4>
+        
+        <div class="form-group">
+          <label for="settings-niche">Main Freelancer Niche</label>
+          <input type="text" id="settings-niche" class="form-input" placeholder="e.g. Senior React Developer, Python Scraper Architect">
+        </div>
+
+        <div class="form-group">
+          <label for="settings-rate">Target Hourly Rate</label>
+          <input type="text" id="settings-rate" class="form-input" placeholder="e.g. $65/hr">
+        </div>
+
+        <div class="form-group">
+          <label for="settings-bio">Your Achievements & Resume Bio</label>
+          <textarea id="settings-bio" class="form-textarea" rows="8" placeholder="Summarize your credentials, major past projects, and core metrics. (e.g. 'Saved 200+ hours of operations for a healthcare client with a Python script; built a React Dashboard that handles 10k daily users')."></textarea>
+          <small class="help-text">This profile data is fed directly into Claude/Gemini to craft custom, highly personalized proposal drafts matching your real history.</small>
+        </div>
+      </div>
+
+      <!-- License Card -->
+      <div class="card">
+        <h4>Commercial Licensing</h4>
+        <div class="form-group">
+          <label for="settings-license">License Activation Key</label>
+          <input type="text" id="settings-license" class="form-input" placeholder="PREM-xxxx-xxxx">
+          <small class="help-text">Unlocks advanced automated search matching, dashboard synchronization, and automated email alerts. Enter key starting with 'PREM-' to unlock Premium mode.</small>
+        </div>
+      </div>
+
+      <button id="btn-save-settings" class="btn btn-primary btn-full">Save Configuration</button>
+      <span class="save-status-msg" id="save-status-msg"></span>
+    </section>
+
+  </main>
+
+  <!-- Load Sidepanel Logic -->
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

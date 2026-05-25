@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.zip
+
+# Claude Code internal context (AI-specific, not needed by end users)
+CLAUDE.md
+.claude/
