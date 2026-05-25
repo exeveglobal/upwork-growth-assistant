@@ -424,3 +424,32 @@ async function callClaude(model, apiKey, prompt) {
   }
   return text;
 }
+
+// ─── Error Logging ─────────────────────────────────────────────────────────────
+// Persists up to 50 error entries in chrome.storage.local["errorLog"].
+// Each entry: { id, ts, context, url, message, stack }
+
+export function logError(context, message, url = '', stack = '') {
+  chrome.storage.local.get({ errorLog: [] }, ({ errorLog }) => {
+    errorLog.push({
+      id: Date.now().toString(),
+      ts: new Date().toISOString(),
+      context,
+      url,
+      message,
+      stack
+    });
+    if (errorLog.length > 50) errorLog.splice(0, errorLog.length - 50);
+    chrome.storage.local.set({ errorLog });
+  });
+}
+
+export function getErrorLog() {
+  return new Promise(resolve => {
+    chrome.storage.local.get({ errorLog: [] }, ({ errorLog }) => resolve(errorLog));
+  });
+}
+
+export function clearErrorLog() {
+  return new Promise(resolve => chrome.storage.local.set({ errorLog: [] }, resolve));
+}

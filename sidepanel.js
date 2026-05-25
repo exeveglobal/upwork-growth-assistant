@@ -6,7 +6,10 @@ import {
   buildProposalPrompt,
   buildProfilePrompt,
   callLLM,
-  getConnectsTier
+  getConnectsTier,
+  logError,
+  getErrorLog,
+  clearErrorLog
 } from './utils.js';
 
 // State
@@ -87,6 +90,10 @@ const logStatusSelect = document.getElementById("log-status");
 const historyContainer = document.getElementById("history-container");
 const btnClearHistory = document.getElementById("btn-clear-history");
 
+// Error Log Elements
+const errorLogContainer = document.getElementById("error-log-container");
+const btnClearErrorLog = document.getElementById("btn-clear-error-log");
+
 // Auto-scanner tracking variables
 let lastPageIdentifier = "";
 let scanInProgress = false;
@@ -98,6 +105,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupTabs();
   setupSettingsUI();
   setupROILogger();
+  setupErrorLog();
   
   // Set initial UI state — show fallbacks, hide all result cards
   showFallbackUI("analyzer");
@@ -138,7 +146,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       }
     } catch (err) {
-      console.error("Auto-scan check failed:", err);
+      logError('sidepanel → auto-scan interval', err.message, '', err.stack);
     }
   }, 1500);
 
@@ -228,7 +236,7 @@ async function scanActivePage() {
     // Try sending message to content script
     sendMessageToContentScript(tab.id, { action: "scrapePage" });
   } catch (error) {
-    console.error("Scan error:", error);
+    logError('sidepanel → scanActivePage', error.message, '', error.stack);
   }
 }
 
@@ -263,6 +271,12 @@ function sendMessageToContentScript(tabId, message, retryCount = 0) {
     }
 
     if (response && response.success) {
+      // nojob is a clean terminal state — no retry, just show fallback quietly
+      if (response.data.type === 'nojob') {
+        scanInProgress = false;
+        showFallbackUI("analyzer");
+        return;
+      }
       if (!response.data.isLoaded && retryCount < 3) {
         setTimeout(() => sendMessageToContentScript(tabId, message, retryCount + 1), 700);
         return;
@@ -272,7 +286,9 @@ function sendMessageToContentScript(tabId, message, retryCount = 0) {
     } else {
       scanInProgress = false;
       showFallbackUI("analyzer");
-      console.error("Scraping returned failure status:", response ? response.error : "Unknown");
+      // Genuine unexpected scrape failure — log it
+      const errMsg = response?.error || 'Unknown scraping error';
+      logError('sidepanel → sendMessageToContentScript', errMsg, '');
     }
   });
 }
@@ -595,7 +611,7 @@ btnGenerateProposal.addEventListener("click", async () => {
 
     renderProposalResult(response);
   } catch (err) {
-    console.error("API Call error:", err);
+    logError('sidepanel → generateProposal', err.message, currentScrapedJob?.title || '', err.stack);
     alert(`AI Generation Failed: ${err.message}`);
   } finally {
     btnGenerateProposal.disabled = false;
@@ -646,7 +662,7 @@ btnOptimizeProfile.addEventListener("click", async () => {
     profileOutputText.innerHTML = formatMarkdownHTML(response);
     profileResultCard.scrollIntoView({ behavior: "smooth" });
   } catch (err) {
-    console.error("API Call error:", err);
+    logError('sidepanel → optimizeProfile', err.message, '', err.stack);
     alert(`Profile Optimization Failed: ${err.message}`);
   } finally {
     btnOptimizeProfile.disabled = false;
@@ -837,6 +853,58 @@ async function deleteLog(id) {
   await chrome.storage.local.set({ logs: proposalLogs });
   renderLogsList();
   updateROIStats();
+}
+
+// ─── Error Log UI ─────────────────────────────────────────────────────────────
+
+function setupErrorLog() {
+  if (btnClearErrorLog) {
+    btnClearErrorLog.addEventListener("click", async () => {
+      if (confirm("Clear all error logs?")) {
+        await clearErrorLog();
+        renderErrorLog([]);
+      }
+    });
+  }
+  loadErrorLog();
+}
+
+async function loadErrorLog() {
+  const logs = await getErrorLog();
+  renderErrorLog(logs);
+}
+
+function renderErrorLog(logs) {
+  if (!errorLogContainer) return;
+
+  if (logs.length === 0) {
+    errorLogContainer.innerHTML = '<p class="empty-list-message">No errors logged. All systems running smoothly.</p>';
+    return;
+  }
+
+  // Most recent first, cap at 20 entries in the UI
+  const recent = [...logs].reverse().slice(0, 20);
+  errorLogContainer.innerHTML = recent.map(entry => {
+    const date = new Date(entry.ts).toLocaleString();
+    return `
+      <div class="error-log-entry">
+        <div class="error-log-meta">
+          <span class="error-log-context">${escapeHtml(entry.context)}</span>
+          <span class="error-log-time">${date}</span>
+        </div>
+        <div class="error-log-message">${escapeHtml(entry.message)}</div>
+        ${entry.url ? `<div class="error-log-url">${escapeHtml(entry.url)}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 // Mini Markdown-to-HTML parser to display rich formatting in results boxes

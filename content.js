@@ -1,5 +1,21 @@
 // content.js - Scraper for Upwork Job Details and Profile Pages
 
+// Rolling error logger — writes up to 50 entries into chrome.storage.local["errorLog"]
+function logError(context, message, stack = '') {
+  chrome.storage.local.get({ errorLog: [] }, ({ errorLog }) => {
+    errorLog.push({
+      id: Date.now().toString(),
+      ts: new Date().toISOString(),
+      context,
+      url: window.location.href,
+      message,
+      stack
+    });
+    if (errorLog.length > 50) errorLog.splice(0, errorLog.length - 50);
+    chrome.storage.local.set({ errorLog });
+  });
+}
+
 // Listen for messages from the sidepanel
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "scrapePage") {
@@ -7,7 +23,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const data = scrapeCurrentPage();
       sendResponse({ success: true, data: data });
     } catch (error) {
-      console.error("Scraping error:", error);
+      // Only genuine unexpected errors reach here — log and report
+      logError('content.js → scrapePage', error.message, error.stack);
+      console.warn('[UGA] Unexpected scrape error:', error.message);
       sendResponse({ success: false, error: error.message });
     }
   } else if (request.action === "checkPageIdentifier") {
@@ -106,12 +124,17 @@ function scrapeProfilePage() {
 function scrapeJobDetailsPage() {
 
   const url = window.location.href;
-  const isFeedPage = url.includes("/nx/find-work") || url.includes("/search") || url.includes("/ab/jobs/");
+  // /details/ paths are direct job views rendered in <main> — not a feed slider
+  const isDirectJobDetail = url.includes("/details/");
+  const isFeedPage = !isDirectJobDetail && (
+    url.includes("/nx/find-work") || url.includes("/search") || url.includes("/ab/jobs/")
+  );
   const drawer = document.querySelector("[role='dialog'], .up-slider, .job-details-panel, .slider-panel, [role='region'] .slider");
 
-  // If on a feed page and no job drawer/slider is open, raise an error
+  // Feed page with no slider open — expected state, not an error
   if (isFeedPage && !drawer) {
-    throw new Error("No job slider open. Click on a job card to open the description slider first.");
+    console.info('[UGA] Feed page with no active job slider — showing fallback.');
+    return { type: 'nojob', isLoaded: false };
   }
 
   // Set the search scope: active drawer if open, otherwise main element, falling back to body
