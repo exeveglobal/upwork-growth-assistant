@@ -1,23 +1,4 @@
-// utils.js - Shared utilities, API clients, and calculations
-
-// Placeholder license check for future commercialization
-export async function checkLicenseStatus() {
-  // In future versions, this will read a license key from chrome.storage.local 
-  // and verify it against a server (e.g. Stripe, ExtensionPay, or Gumroad).
-  try {
-    const data = await chrome.storage.local.get(["licenseKey"]);
-    if (data.licenseKey) {
-      // Mock validation: keys starting with 'PREM-' are premium
-      if (data.licenseKey.startsWith("PREM-")) {
-        return { status: "active", tier: "premium", expires: "2027-12-31" };
-      }
-    }
-    // Default fallback to active free tier for open-source version
-    return { status: "active", tier: "free_tier", expires: "lifetime" };
-  } catch (e) {
-    return { status: "active", tier: "free_tier" };
-  }
-}
+// utils.js - Shared utilities and calculations (ROI scoring, error log)
 
 // Connect cost tier label
 export function getConnectsTier(n) {
@@ -128,6 +109,9 @@ function scoreUnanswered(un, inv) {
   if (un === 0)         return 25; // none unanswered
   return 50;                        // partial
 }
+
+// Bump when the scoring formula or its bands change, so stored score snapshots stay comparable.
+export const SCORING_VERSION = '1';
 
 // ROI Scoring — Weighted Bucket Model
 // Final = (A×0.30 + B×0.45 + C×0.25) × payment_multiplier + connects_modifier
@@ -265,164 +249,12 @@ export function calculateROIScore(job) {
     reasons.push(`${dir}  ${job.connectsNeeded} connects (${tier})`);
   }
 
-  return { score: finalScore, label, color, reasons };
-}
-
-// Generate the specific prompt for proposal hooks and full proposal
-export function buildProposalPrompt(job, freelancer, tone) {
-  const bioContext = freelancer.bio ? `Freelancer Experience Summary:\n${freelancer.bio}` : "";
-  const nicheContext = freelancer.niche ? `Target Niche/Keywords: ${freelancer.niche}` : "";
-  const rateContext = freelancer.rate ? `Hourly Rate: ${freelancer.rate}` : "";
-  const clientNameContext = job.clientName 
-    ? `Client Name (extracted from review history): ${job.clientName}` 
-    : "Client Name: Unknown (use a friendly general greeting like 'Hi,' or 'Hi there,')";
-
-  return `
-You are a world-class freelancer copywriting expert. Your goal is to write a highly persuasive, non-templated Upwork proposal that reads like a natural, high-value consultant, NOT a robotic AI.
-
-=== JOB POST DETAILS ===
-Title: ${job.title}
-${clientNameContext}
-Budget: ${job.budget}
-Hourly/Fixed: ${job.isHourly ? "Hourly" : "Fixed-Price"}
-Description: 
-${job.description || job.rawText}
-
-=== FREELANCER CONTEXT ===
-${bioContext}
-${nicheContext}
-${rateContext}
-
-=== INSTRUCTIONS & CUSTOMER PSYCHOLOGY RULES ===
-1. **Personalization / Greeting**: If the Client Name is provided, greet them directly (e.g. 'Hi ${job.clientName || "[Name]"},' or 'Hi ${job.clientName || "[Name]"} -'). If the Client Name is unknown, use a friendly generic greeting like 'Hi,' or 'Hi there,'. NEVER use robotic or archaic templates like 'Dear Hiring Manager', 'Dear Client', or 'Hi [Hiring Manager]'.
-2. **No Technical Dumps**: Do not write a bullet-point list of every technology you know. Instead, focus entirely on the client's core problem and how you will solve it.
-3. **Strictly Ban Generic Openings**: NEVER start the first line with "Hello, my name is...", "I am writing to apply...", or "I am a senior developer...".
-4. **The "First 2 Lines" Rule**: The client only sees the first 2 lines in their proposal feed. The hook must instantly state a solution, reference a similar project, or ask a sharp, insightful technical question about their specific problem to stand out.
-5. **The Case Study Hook**: Give a single-sentence proof of execution: "I recently solved a similar issue with X by doing Y, which resulted in Z."
-6. **No AI Clichés**: Avoid words like "leverage", "delve", "testament", "innovative", "cutting-edge", "robust", "game-changing". Keep the tone human, confident, and professional.
-7. **Low-Friction CTA**: Close with an easy, low-commitment question or offer (e.g. "Should I send over a quick 2-line draft of how we would structure this?" or "I have a specific question about [variable] in your post—could you clarify?").
-
-=== OUTPUT FORMAT ===
-Generate your response in EXACTLY the following structure. Use clear markdown sections. Do not include any meta-introductions (like "Here is your proposal").
-
-### 1. Three Opening Hook Options (First 2 Lines Only)
-Create 3 distinct psychological approaches for the hook:
-- **Option A (Case Study/Proof-centric)**: Focuses on a similar result you've achieved.
-- **Option B (Question/Discovery-centric)**: Focuses on asking a highly relevant technical/scoping question about their job description.
-- **Option C (Immediate Value/Solution-centric)**: Focuses on outlining the immediate first step to resolve their issue.
-
----
-
-### 2. Tailored Proposal Body
-Write a concise, complete proposal (under 250 words total) using the Hook Option A. It should flow naturally:
-- **Opening**: Hook Option A.
-- **Body**: How you approach their problem, why your experience aligns, and what result they can expect. Keep it brief and focused.
-- **Closing**: A low-friction Call to Action (CTA) asking a clarifying question or offering a small quick win.
-`;
-}
-
-// Generate the specific prompt for profile optimization
-export function buildProfilePrompt(profile, targetNiche) {
-  return `
-You are an SEO and copywriting expert specializing in Upwork profile optimization. Your goal is to analyze the freelancer's current profile details and provide highly actionable recommendations to increase search visibility and client conversion.
-
-=== CURRENT PROFILE ===
-Title: ${profile.title}
-Hourly Rate: ${profile.rate}
-Skills: ${profile.skills.join(", ")}
-Overview Bio:
-${profile.overview || profile.rawText}
-
-=== TARGET NICHE ===
-${targetNiche || "General Freelancer (optimize for current skills)"}
-
-=== INSTRUCTIONS ===
-1. **Analyze Title**: Is it clear, keyword-optimized, and hook-focused? Suggest 3 alternative titles.
-2. **Analyze Skills Tags**: Are there missing key tags Upwork's search engine searches for? Suggest additions.
-3. **Overview Review**: Does it have an engaging hook in the first 3 lines? Is it structured with bullet points and clear value propositions?
-4. **Draft Optimized Bio**: Rewrite the profile bio overview. Keep it professional, structured (Hook, Pain point, Solutions, Social proof/results, CTA), and highly readable.
-
-=== OUTPUT FORMAT ===
-Generate your response in clean markdown with the following sections:
-- **SEO & Search Visibility Score (0-100)**: Rate the profile and give 2 key reasons.
-- **Title Optimizations**: 3 suggested alternatives.
-- **Recommended Skills Tags**: Up to 5 tags to add/swap.
-- **Key Critique Points**: 2-3 bullet points of what's currently holding them back.
-- **Optimized Bio Rewrite**: Complete, drop-in replacement bio.
-`;
-}
-
-// API Dispatcher supporting Gemini and Anthropic
-export async function callLLM({ provider, model, apiKey, prompt }) {
-  if (provider === "gemini") {
-    return callGemini(model, apiKey, prompt);
-  } else if (provider === "anthropic") {
-    return callClaude(model, apiKey, prompt);
-  } else {
-    throw new Error("Unsupported API provider selected.");
-  }
-}
-
-// Google Gemini API Client
-async function callGemini(model, apiKey, prompt) {
-  const modelName = model || "gemini-2.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }]
-    })
-  });
-
-  if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `Gemini API returned status ${response.status}`);
-  }
-
-  const resData = await response.json();
-  const text = resData.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    throw new Error("Empty response returned from Gemini API.");
-  }
-  return text;
-}
-
-// Anthropic Claude API Client
-async function callClaude(model, apiKey, prompt) {
-  const modelName = model || "claude-sonnet-4-6";
-  const url = "https://api.anthropic.com/v1/messages";
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-      // Crucial header allowing browser extensions to call Anthropic directly
-      "anthropic-dangerous-direct-browser-access": "true"
-    },
-    body: JSON.stringify({
-      model: modelName,
-      max_tokens: 2048,
-      messages: [{ role: "user", content: prompt }]
-    })
-  });
-
-  if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `Claude API returned status ${response.status}`);
-  }
-
-  const resData = await response.json();
-  const text = resData.content?.[0]?.text;
-  if (!text) {
-    throw new Error("Empty response returned from Claude API.");
-  }
-  return text;
+  return {
+    score: finalScore, label, color, reasons,
+    buckets: { A: Ar, B: Br, C: Cr },
+    paymentMultiplier: paymentMult,
+    connectsModifier: connectsMod
+  };
 }
 
 // ─── Error Logging ─────────────────────────────────────────────────────────────

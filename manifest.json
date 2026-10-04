@@ -2,20 +2,23 @@
   "manifest_version": 3,
   "name": "Upwork Growth Assistant",
   "version": "1.0.0",
-  "description": "Score connects ROI, write persuasive proposals using Gemini & Claude, and optimize your Upwork profile.",
+  "description": "Score Upwork jobs by Connects ROI and track your proposals. AI proposal writing and profile optimization coming soon.",
   "permissions": [
     "activeTab",
     "storage",
     "sidePanel",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "https://*.upwork.com/*",
-    "https://generativelanguage.googleapis.com/*",
-    "https://api.anthropic.com/*"
+    "https://ege.exeve.global/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "action": {
     "default_title": "Open Upwork Growth Assistant"
@@ -26,7 +29,7 @@
   "content_scripts": [
     {
       "matches": ["https://*.upwork.com/*"],
-      "js": ["content.js"],
+      "js": ["content.js", "apply-capture.js", "proposals-scan.js", "activity.js"],
       "run_at": "document_end"
     }
   ],
