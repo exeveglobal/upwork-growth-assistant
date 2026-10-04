@@ -125,6 +125,8 @@ export function buildCapturedProposalPayload(data, scored, appliedAtMs) {
     connectsAvailableBefore: data.connectsAvailableBefore,
     connectsRemainingAfter: data.connectsRemainingAfter,
     contractType: data.contractType,
+    paymentMode: data.paymentMode,
+    milestones: data.milestones,
     bidAmount: data.bidAmount,
     hourlyRate: data.hourlyRate,
     youReceive: data.youReceive,

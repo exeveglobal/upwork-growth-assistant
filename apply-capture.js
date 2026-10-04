@@ -80,6 +80,34 @@
     return undefined;
   }
 
+  /**
+   * Fixed-price terms. "By project" = one payment at the end; "By milestone" = several, each with
+   * its own amount. Milestone rows are read by what their inputs are called, since the layout of
+   * that section has not been observed yet: whatever cannot be read is reported through `unread`.
+   */
+  function readPaymentMode(doc) {
+    const radio = doc.querySelector('input[name="milestoneMode"]:checked');
+    if (!radio) return undefined;
+    return radio.value === 'milestone' ? 'milestone' : 'project';
+  }
+
+  function readMilestones(doc) {
+    const fields = [...doc.querySelectorAll('input, textarea')].filter(el =>
+      /milestone/i.test(`${el.id} ${el.name} ${el.getAttribute('aria-label') || ''}`) && el.name !== 'milestoneMode' && el.type !== 'radio'
+    );
+    const rows = new Map();
+    for (const el of fields) {
+      const row = el.closest('[data-test*="milestone" i], li, fieldset, .form-group') || el.parentElement;
+      if (!rows.has(row)) rows.set(row, { description: undefined, amount: undefined, dueDate: undefined });
+      const entry = rows.get(row);
+      const hint = `${el.id} ${el.name} ${el.getAttribute('aria-label') || ''} ${el.getAttribute('data-test') || ''}`;
+      if (/amount|price|currency/i.test(hint) || el.getAttribute('data-test') === 'currency-input') entry.amount = money(el.value);
+      else if (/due|date/i.test(hint) || el.type === 'date') entry.dueDate = (el.value || '').trim().slice(0, 40) || undefined;
+      else entry.description = (el.value || '').trim().slice(0, 300) || undefined;
+    }
+    return [...rows.values()].map(clean).filter(m => m.amount !== undefined || m.description).slice(0, 20);
+  }
+
   function readForm(doc, url) {
     const main = doc.querySelector('main') || doc.body;
     const text = main.innerText || '';
@@ -104,6 +132,13 @@
         .filter(q => q.question)
     );
 
+    const paymentMode = contractType === 'fixed' ? safe(() => readPaymentMode(doc)) : undefined;
+    const milestones = paymentMode === 'milestone' ? safe(() => readMilestones(doc)) : undefined;
+    const unread = [];
+    if (!contractType) unread.push('contractType');
+    if (contractType === 'fixed' && !paymentMode) unread.push('paymentMode');
+    if (paymentMode === 'milestone' && !(milestones && milestones.length)) unread.push('milestones');
+
     const cover = safe(() => doc.querySelector('textarea[aria-labelledby="cover_letter_label"]').value.trim());
 
     return clean({
@@ -113,6 +148,9 @@
       ...summary,
       boostRank: safe(() => parseBoostRank(text, summary.connectsBoost)),
       contractType,
+      paymentMode,
+      milestones: milestones && milestones.length ? milestones : undefined,
+      unread: unread.length ? unread : undefined,
       bidAmount: contractType === 'fixed' ? safe(() => money(fixedBid.value)) : undefined,
       hourlyRate: contractType === 'hourly' ? safe(() => money(hourlyRate.value)) : undefined,
       youReceive: safe(() => money(received.value)),
@@ -122,7 +160,7 @@
     });
   }
 
-  globalThis.__ugaApplyCapture = { parseSummary, parseApplyAs, parseBoostRank, parseTitle, money, readForm };
+  globalThis.__ugaApplyCapture = { readPaymentMode, readMilestones, parseSummary, parseApplyAs, parseBoostRank, parseTitle, money, readForm };
 
   // ── wiring ─────────────────────────────────────────────────────────────────
   if (typeof document === 'undefined' || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;

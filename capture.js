@@ -10,6 +10,7 @@ import { enqueue } from './outbox.js';
 import { SCORING_VERSION, logError } from './utils.js';
 import { buildCapturedProposalPayload } from './tracking.js';
 import { upsertCapturedLog } from './logs.js';
+import { logDiag } from './diag.js';
 
 export const CONFIRM_WINDOW_MS = 2 * 60 * 1000;
 
@@ -53,6 +54,8 @@ async function recordCapturedProposal(data, at) {
   const { scoredIndex = {} } = await chrome.storage.local.get('scoredIndex');
   const scored = scoredIndex[data.jobId];
   const payload = buildCapturedProposalPayload(data, scored, at);
+  if (data.unread) logDiag('apply.unread_fields', { fields: data.unread });
+  if (!scored) logDiag('apply.no_score_snapshot', {}); // job was never scored before applying
 
   const queued = await enqueue('proposal.submitted', payload, {
     occurredAt: payload.submittedAt,

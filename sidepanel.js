@@ -17,11 +17,9 @@ import {
 } from './connection.js';
 import { enqueue, flush } from './outbox.js';
 import { updateLogs } from './logs.js';
+import { readDiag, formatDiag, clearDiag } from './diag.js';
 import {
-  buildJobScoredPayload,
   buildScoreSnapshot,
-  scoreSignature,
-  shouldEmitJobScored,
   toCanonicalStatus,
   boostRankNumber
 } from './tracking.js';
@@ -383,7 +381,7 @@ function handleScrapeResult(data) {
     const roi = calculateROIScore(data);
     currentRoi = roi;
     updateLogJobButton();
-    trackJobScored(data, roi);
+    trackJobScored(data);
     updateROIRadial(roi.score, roi.color);
     roiLabel.textContent = roi.label;
     roiLabel.style.backgroundColor = roi.color;
@@ -617,25 +615,11 @@ function setupConnectionUI() {
 
 // Records a scanned job with its score inputs, at most once per change / 30 minutes. The latest
 // snapshot is always kept locally so a later apply-page capture can attach "the score as it was".
-async function trackJobScored(job, roi) {
+// The service worker is the single writer of the score snapshot (job-scored.js); job pages also
+// push what they scrape on their own, so this only covers a scan the member triggered here.
+function trackJobScored(job) {
   try {
-    if (!connection || !job.isLoaded || !job.jobId) return;
-    const { scoredIndex = {} } = await chrome.storage.local.get("scoredIndex");
-    const prev = scoredIndex[job.jobId];
-    const sig = scoreSignature(job, roi);
-    const now = Date.now();
-    const due = shouldEmitJobScored(prev, now, sig);
-
-    if (due) await enqueue("job.scored", buildJobScoredPayload(job, roi), { scoringVersion: SCORING_VERSION });
-
-    scoredIndex[job.jobId] = {
-      at: due ? now : prev.at,
-      sig,
-      seenAt: now,
-      snapshot: buildScoreSnapshot(job, roi)
-    };
-    const newest = Object.entries(scoredIndex).sort((a, b) => b[1].seenAt - a[1].seenAt).slice(0, 200);
-    await chrome.storage.local.set({ scoredIndex: Object.fromEntries(newest) });
+    chrome.runtime.sendMessage({ action: "jobScraped", job }).catch(() => {});
   } catch (err) {
     logError("sidepanel → trackJobScored", err.message, "", err.stack);
   }
@@ -869,10 +853,24 @@ async function deleteLog(id) {
 // ─── Error Log UI ─────────────────────────────────────────────────────────────
 
 function setupErrorLog() {
+  const btnCopyDiag = document.getElementById("btn-copy-diag");
+  if (btnCopyDiag) {
+    btnCopyDiag.addEventListener("click", async () => {
+      try {
+        const entries = await readDiag();
+        await navigator.clipboard.writeText(formatDiag(entries, chrome.runtime.getManifest().version));
+        btnCopyDiag.textContent = entries.length ? `Copied ${entries.length}` : "Nothing to copy";
+        setTimeout(() => { btnCopyDiag.textContent = "Copy diagnostics"; }, 2000);
+      } catch (err) {
+        logError("sidepanel → copy diagnostics", err.message, "", err.stack);
+      }
+    });
+  }
   if (btnClearErrorLog) {
     btnClearErrorLog.addEventListener("click", async () => {
       if (confirm("Clear all error logs?")) {
         await clearErrorLog();
+        await clearDiag();
         renderErrorLog([]);
       }
     });

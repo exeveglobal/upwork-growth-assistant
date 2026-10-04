@@ -16,6 +16,30 @@ function logError(context, message, stack = '') {
   });
 }
 
+
+// Job title/description lookups, shared by the page identifier and the scraper. Upwork renders the
+// job title as an <h4> (slider and direct job page alike) and the description under
+// [data-test="Description"]; the older selectors stay as fallbacks. Observed live, see
+// docs/UPWORK-JOB-PAGE.md.
+const JOB_TITLE_SELECTORS = ".job-details-card h4, [data-test='job-title'], h1, h2.job-title, .job-title";
+const JOB_DESC_SELECTORS = "[data-test='Description'], .job-details-card p.text-body-sm.multiline-text, [data-test='job-description'], .job-description, .fe-job-description, [data-qa='job-description']";
+
+function findJobDescriptionEl(root) {
+  return root.querySelector(JOB_DESC_SELECTORS);
+}
+
+function findJobTitleEl(root) {
+  const direct = root.querySelector(JOB_TITLE_SELECTORS);
+  if (direct) return direct;
+  // The feed has an <h4> per card, so only trust a bare heading when the description is on screen too
+  return findJobDescriptionEl(root) ? root.querySelector("h4") : null;
+}
+
+// Tell the service worker about something unreadable, so selectors can be fixed from evidence.
+function reportDiag(kind, detail) {
+  try { chrome.runtime.sendMessage({ action: 'diag', kind, detail }).catch(() => {}); } catch { /* extension reloaded */ }
+}
+
 // Listen for messages from the sidepanel
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "scrapePage") {
@@ -57,10 +81,8 @@ function getPageIdentifier() {
   );
   const root = drawerEl || document.querySelector("main, article") || document.body;
 
-  const jobTitleEl  = root.querySelector(".job-details-card h4, h1, h2.job-title, [data-test='job-title'], .job-title");
-  const jobDescEl   = root.querySelector(
-    ".job-details-card p.text-body-sm.multiline-text, [data-test='job-description'], .job-description, .fe-job-description, [data-qa='job-description']"
-  );
+  const jobTitleEl  = findJobTitleEl(root);
+  const jobDescEl   = findJobDescriptionEl(root);
 
   const jobTitle = jobTitleEl ? jobTitleEl.textContent.trim() : "";
 
@@ -156,11 +178,11 @@ function scrapeJobDetailsPage() {
   const root = drawer || document.querySelector("main, article") || document.body;
 
   // 1. Job Title
-  const titleEl = root.querySelector(".job-details-card h4, h1, h2.job-title, [data-test='job-title'], .job-title");
+  const titleEl = findJobTitleEl(root);
   const title = titleEl ? titleEl.textContent.trim() : "";
 
   // 2. Job Description
-  const descEl = root.querySelector(".job-details-card p.text-body-sm.multiline-text, [data-test='job-description'], .job-description, .fe-job-description, [data-qa='job-description']");
+  const descEl = findJobDescriptionEl(root);
   const description = descEl ? descEl.textContent.trim() : "";
 
   // Full text — fallback only when DOM selectors fail
@@ -406,11 +428,20 @@ function scrapeJobDetailsPage() {
   }
 
   // Verify title matches URL slug to catch stale SPA cache
-  if (isLoaded && !isFeedPage && url.includes("/jobs/")) {
+  // (only when the URL carries a title slug: /jobs/<slug>_~id; a bare /jobs/~id has nothing to compare)
+  if (isLoaded && !isFeedPage && /\/jobs\/[^/?#]*_~/.test(url)) {
     if (!verifyScrapeMatch(url, title)) {
       // Stale SPA cache: URL slug doesn't match rendered title — wait for correct content
       isLoaded = false;
     }
+  }
+
+  // A job view whose title/description could not be read: record which part, once per hour
+  if ((drawer || /\/jobs\/|\/details\//.test(url)) && (!title || description.length < 50)) {
+    reportDiag('scrape.job_unreadable', {
+      missing: [!title && 'title', description.length < 50 && 'description'].filter(Boolean),
+      view: drawer ? 'slider' : 'page'
+    });
   }
 
   // Client name from review text (heuristic)
@@ -529,3 +560,33 @@ function cleanText(text) {
   if (!text) return "";
   return text.replace(/\s+/g, " ").trim();
 }
+
+
+// ── Automatic job tracking ────────────────────────────────────────────────────
+// Reports every fully loaded job view (slider or full page) to the service worker, so the score
+// snapshot exists even when the side panel is closed or the job was opened straight in a new tab.
+// Read-only: the page is only observed. The worker ignores it unless the member is connected.
+(() => {
+  if (globalThis.__ugaJobWatch) return;
+  globalThis.__ugaJobWatch = true;
+
+  const JOB_VIEW = /~[0-9A-Za-z]{10,40}/;
+  const NOT_JOB_VIEW = /\/(apply|proposals)(\/|$)/;
+  const POLL_MS = 3000;
+  let last = '';
+
+  setInterval(() => {
+    try {
+      if (document.visibilityState !== 'visible') return;
+      const path = location.pathname;
+      if (!JOB_VIEW.test(path) || NOT_JOB_VIEW.test(path)) return;
+      const job = scrapeJobDetailsPage();
+      if (job.type !== 'job' || !job.isLoaded || !job.jobId) return;
+
+      const sig = [job.jobId, job.title, job.proposalRangeText, job.interviewingCount, job.invitesSent, job.connectsNeeded].join('|');
+      if (sig === last) return;
+      last = sig;
+      chrome.runtime.sendMessage({ action: 'jobScraped', job: { ...job, rawText: undefined } }).catch(() => {});
+    } catch { /* never let observation break the page */ }
+  }, POLL_MS);
+})();

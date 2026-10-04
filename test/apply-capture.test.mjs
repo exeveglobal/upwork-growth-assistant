@@ -127,3 +127,11 @@ test('money parsing ignores signs, symbols and thousands separators', () => {
   assert.equal(money(''), undefined);
   assert.equal(money(undefined), undefined);
 });
+
+test('readPaymentMode reads the fixed-price "How do you want to be paid?" choice', () => {
+  const { readPaymentMode } = cap;
+  const docWith = (value) => ({ querySelector: (s) => (s.includes('milestoneMode') && value ? { value } : null) });
+  assert.equal(readPaymentMode(docWith('milestone')), 'milestone');
+  assert.equal(readPaymentMode(docWith('default')), 'project');
+  assert.equal(readPaymentMode(docWith(null)), undefined);
+});
