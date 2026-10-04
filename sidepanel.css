@@ -1086,7 +1086,8 @@ details.bucket-section:not([open]) .bucket-summary::after {
   cursor: pointer;
 }
 
-.conn-line { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.conn-line { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; min-width: 0; }
+.conn-line strong { min-width: 0; word-break: break-all; }
 .conn-dot { width: 8px; height: 8px; border-radius: 50%; background-color: var(--accent-green); }
 .conn-disconnect { margin-top: 12px; }
 .conn-error { color: var(--accent-crimson); font-size: 12px; margin-top: 8px; }

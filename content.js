@@ -46,7 +46,7 @@ function getPageIdentifier() {
   const url = window.location.href;
 
   // Profile page — check first so it doesn't fall into job logic
-  const profileEl = document.querySelector("[data-test='profile-title']");
+  const profileEl = document.querySelector("[data-test='identity-name'], [data-test='profile-title']");
   if (profileEl) {
     return `profile:${profileEl.textContent.trim()}:${url}`;
   }
@@ -57,9 +57,9 @@ function getPageIdentifier() {
   );
   const root = drawerEl || document.querySelector("main, article") || document.body;
 
-  const jobTitleEl  = root.querySelector("h1, h2.job-title, [data-test='job-title'], .job-title");
+  const jobTitleEl  = root.querySelector(".job-details-card h4, h1, h2.job-title, [data-test='job-title'], .job-title");
   const jobDescEl   = root.querySelector(
-    "[data-test='job-description'], .job-description, .fe-job-description, [data-qa='job-description']"
+    ".job-details-card p.text-body-sm.multiline-text, [data-test='job-description'], .job-description, .fe-job-description, [data-qa='job-description']"
   );
 
   const jobTitle = jobTitleEl ? jobTitleEl.textContent.trim() : "";
@@ -77,7 +77,7 @@ function getPageIdentifier() {
 function scrapeCurrentPage() {
   const url = window.location.href;
   
-  if (url.includes("/freelancers/") || url.includes("/nx/find-work/profile") || document.querySelector("[data-test='profile-title']")) {
+  if (url.includes("/freelancers/") || url.includes("/nx/find-work/profile") || document.querySelector("[data-test='identity-name'], [data-test='profile-title']")) {
     return scrapeProfilePage();
   } else {
     // Default to scraping job details (since it could be a job feed, job details page, or slider)
@@ -87,27 +87,42 @@ function scrapeCurrentPage() {
 
 // Scrape profile details
 function scrapeProfilePage() {
-  
+
   // Try selectors for profile title, overview, skills, rate
-  const titleEl = document.querySelector("h1, [data-test='profile-title'], .fe-profile-title");
+  const titleEl = document.querySelector("[data-test='identity-name'], h1, [data-test='profile-title'], .fe-profile-title");
   const overviewEl = document.querySelector("[data-test='profile-description'], .fe-profile-overview, .profile-description");
   const rateEl = document.querySelector("[data-test='profile-rate'], .fe-profile-rate h2");
-  
-  // Skills tags
-  const skillEls = document.querySelectorAll("[data-test='skill-link'], .skills-list-item, .o-tag-skill");
+
+  // Skills tags — current markup drops stable classes/data-test attrs on the tokens
+  // themselves, so locate the "Skills" heading's card section and read its tokens.
+  let skillEls = document.querySelectorAll("[data-test='skill-link'], .skills-list-item, .o-tag-skill");
+  if (skillEls.length === 0) {
+    const skillsHeading = Array.from(document.querySelectorAll('h2, h3, h4'))
+      .find(el => el.textContent.trim() === 'Skills');
+    const skillsSection = skillsHeading ? skillsHeading.closest('section') : null;
+    if (skillsSection) skillEls = skillsSection.querySelectorAll('.air3-token');
+  }
   const skills = Array.from(skillEls).map(el => el.textContent.trim()).filter(Boolean);
-  
+
   const title = titleEl ? titleEl.textContent.trim() : "";
   const overview = overviewEl ? overviewEl.textContent.trim() : "";
-  const rate = rateEl ? rateEl.textContent.trim() : "";
-  
+  let rate = rateEl ? rateEl.textContent.trim() : "";
+
   // Fallback: If overview is empty, get the main text container of the profile
   let rawText = "";
   if (!overview) {
-    const profileContainer = document.querySelector("main, #main, article, .fe-profile-main");
+    const profileContainer = document.querySelector("main, #main, article, .fe-profile-main, .profile-container");
     if (profileContainer) {
       rawText = cleanText(profileContainer.textContent);
     }
+  }
+
+  // Rate has no stable selector in current markup either — fall back to a regex
+  // over the raw text (or full body text if overview was already found).
+  if (!rate) {
+    const searchText = rawText || cleanText((document.querySelector("main, #main, article, .fe-profile-main, .profile-container") || document.body).textContent);
+    const m = searchText.match(/\$([\d.]+)\s*\/\s*hr/i);
+    if (m) rate = `$${m[1]}/hr`;
   }
 
   return {
@@ -141,11 +156,11 @@ function scrapeJobDetailsPage() {
   const root = drawer || document.querySelector("main, article") || document.body;
 
   // 1. Job Title
-  const titleEl = root.querySelector("h1, h2.job-title, [data-test='job-title'], .job-title");
+  const titleEl = root.querySelector(".job-details-card h4, h1, h2.job-title, [data-test='job-title'], .job-title");
   const title = titleEl ? titleEl.textContent.trim() : "";
 
   // 2. Job Description
-  const descEl = root.querySelector("[data-test='job-description'], .job-description, .fe-job-description, [data-qa='job-description']");
+  const descEl = root.querySelector(".job-details-card p.text-body-sm.multiline-text, [data-test='job-description'], .job-description, .fe-job-description, [data-qa='job-description']");
   const description = descEl ? descEl.textContent.trim() : "";
 
   // Full text — fallback only when DOM selectors fail
