@@ -1,42 +1,74 @@
 // sidepanel.js - Controller for Upwork Growth Assistant Side Panel
 
 import {
-  checkLicenseStatus,
   calculateROIScore,
-  buildProposalPrompt,
-  buildProfilePrompt,
-  callLLM,
+  SCORING_VERSION,
   getConnectsTier,
   logError,
   getErrorLog,
   clearErrorLog
 } from './utils.js';
+import {
+  getConnection,
+  getConnectionLost,
+  connectWithCode,
+  disconnect,
+  verifyConnection
+} from './connection.js';
+import { enqueue, flush } from './outbox.js';
+import { updateLogs } from './logs.js';
+import {
+  buildJobScoredPayload,
+  buildScoreSnapshot,
+  scoreSignature,
+  shouldEmitJobScored,
+  toCanonicalStatus,
+  boostRankNumber
+} from './tracking.js';
 
 // State
 let currentScrapedJob = null;
-let currentScrapedProfile = null;
-let appSettings = {};
+let appSettings = {};      // { niche, rate, bio } - local only
+let connection = null;     // stored connection (Connected tier) or null (Free tier)
+let currentRoi = null;     // ROI result for currentScrapedJob
+let pendingLogJob = null;  // job the ROI Hub form is linked to: { jobId, jobUrl, title, scoreSnapshot }
 let proposalLogs = [];
 
 // DOM Elements
 const tabButtons = document.querySelectorAll(".tab-btn");
 const tabPanels = document.querySelectorAll(".tab-panel");
-const licenseBadge = document.getElementById("license-badge");
+const tierBadge = document.getElementById("tier-badge");
+const connectionBanner = document.getElementById("connection-banner");
+const connectionBannerText = document.getElementById("connection-banner-text");
+const btnBannerConnect = document.getElementById("btn-banner-connect");
+const freeNotice = document.getElementById("free-notice");
+const btnFreeConnect = document.getElementById("btn-free-connect");
+const roiLocked = document.getElementById("roi-locked");
+const roiContent = document.getElementById("roi-content");
+const btnLockConnect = document.getElementById("btn-lock-connect");
+const btnLogJob = document.getElementById("btn-log-job");
+const logLinked = document.getElementById("log-linked");
+const logLinkedTitle = document.getElementById("log-linked-title");
+const btnUnlinkJob = document.getElementById("btn-unlink-job");
+const logSyncHint = document.getElementById("log-sync-hint");
 
 // Settings Elements
-const providerSelect = document.getElementById("settings-provider");
-const anthropicConfigBlock = document.getElementById("anthropic-config-block");
-const geminiConfigBlock = document.getElementById("gemini-config-block");
-const anthropicKeyInput = document.getElementById("settings-anthropic-key");
-const anthropicModelSelect = document.getElementById("settings-anthropic-model");
-const geminiKeyInput = document.getElementById("settings-gemini-key");
-const geminiModelSelect = document.getElementById("settings-gemini-model");
 const settingsNicheInput = document.getElementById("settings-niche");
 const settingsRateInput = document.getElementById("settings-rate");
 const settingsBioInput = document.getElementById("settings-bio");
-const settingsLicenseInput = document.getElementById("settings-license");
 const saveSettingsBtn = document.getElementById("btn-save-settings");
 const saveStatusMsg = document.getElementById("save-status-msg");
+
+// Connection Elements
+const connConnected = document.getElementById("conn-connected");
+const connForm = document.getElementById("conn-form");
+const connMemberName = document.getElementById("conn-member-name");
+const connConsent = document.getElementById("conn-consent");
+const connCodeInput = document.getElementById("conn-code");
+const btnConnect = document.getElementById("btn-connect");
+const connSpinner = document.getElementById("conn-spinner");
+const connError = document.getElementById("conn-error");
+const btnDisconnect = document.getElementById("btn-disconnect");
 
 // Analyzer Elements
 const jobPageStatus = document.getElementById("job-page-status");
@@ -49,33 +81,9 @@ const roiProgressRing = document.getElementById("roi-progress");
 const roiNumber = document.getElementById("roi-number");
 const roiLabel = document.getElementById("roi-label");
 const roiReasonsList = document.getElementById("roi-reasons-list");
-const proposalGenCard = document.getElementById("proposal-generation-card");
-const proposalToneSelect = document.getElementById("proposal-tone");
-const btnGenerateProposal = document.getElementById("btn-generate-proposal");
-const proposalSpinner = document.getElementById("proposal-spinner");
-const proposalResultCard = document.getElementById("proposal-result-card");
-const proposalOutputText = document.getElementById("proposal-output-text");
-const proposalCopyHint = document.getElementById("proposal-copy-hint");
-const btnCopyHooks = document.getElementById("btn-copy-hooks");
-const btnCopyProposal = document.getElementById("btn-copy-proposal");
-const btnLogProposal = document.getElementById("btn-log-proposal");
+const aiComingSoonCard = document.getElementById("ai-coming-soon-card");
 const btnReloadJob = document.getElementById("btn-reload-job");
 const analyzerFallback = document.getElementById("analyzer-fallback");
-
-// Optimizer Elements
-const profileStatus = document.getElementById("profile-status");
-const profileDetectedCard = document.getElementById("profile-detected-card");
-const scrapedProfileTitle = document.getElementById("scraped-profile-title");
-const profileControlCard = document.getElementById("profile-control-card");
-const optimizerNicheInput = document.getElementById("optimizer-niche");
-const btnOptimizeProfile = document.getElementById("btn-optimize-profile");
-const profileSpinner = document.getElementById("profile-spinner");
-const profileResultCard = document.getElementById("profile-result-card");
-const profileOutputText = document.getElementById("profile-output-text");
-const profileCopyHint = document.getElementById("profile-copy-hint");
-const btnCopyProfile = document.getElementById("btn-copy-profile");
-const btnReloadProfile = document.getElementById("btn-reload-profile");
-const optimizerFallback = document.getElementById("optimizer-fallback");
 
 // ROI Hub Elements
 const statTotalConnects = document.getElementById("stat-total-connects");
@@ -94,6 +102,8 @@ const btnClearHistory = document.getElementById("btn-clear-history");
 const errorLogContainer = document.getElementById("error-log-container");
 const btnClearErrorLog = document.getElementById("btn-clear-error-log");
 
+const CONNECTION_RECHECK_MS = 5 * 60 * 1000;
+
 // Auto-scanner tracking variables
 let lastPageIdentifier = "";
 let scanInProgress = false;
@@ -104,12 +114,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadProposalLogs();
   setupTabs();
   setupSettingsUI();
+  setupConnectionUI();
   setupROILogger();
   setupErrorLog();
-  
-  // Set initial UI state — show fallbacks, hide all result cards
-  showFallbackUI("analyzer");
-  showFallbackUI("optimizer");
+
+  // Tier first (instant, from storage), then confirm the token with the engine in the background
+  await refreshTier();
+  flush().catch(() => {});
+  verifyConnection().catch(err => logError('sidepanel → verifyConnection', err.message, '', err.stack));
+  setInterval(() => verifyConnection().catch(() => {}), CONNECTION_RECHECK_MS);
+
+  // Set initial UI state — show fallback, hide all result cards
+  showFallbackUI();
   await scanActivePage();
 
   // Setup periodic SPA scanner (every 1.5s) to detect drawer openings or navigation changes
@@ -141,8 +157,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       } else {
         if (lastPageIdentifier !== "not-upwork") {
           lastPageIdentifier = "not-upwork";
-          showFallbackUI("analyzer");
-          showFallbackUI("optimizer");
+          showFallbackUI();
         }
       }
     } catch (err) {
@@ -164,15 +179,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     clearCachedUI();
     scanActivePage();
   });
-  if (btnReloadProfile) btnReloadProfile.addEventListener("click", () => {
-    clearCachedUI();
-    scanActivePage();
-  });
 });
 
 // Resets UI to "scanning" state — job header card stays visible so the user sees the
 // transition animation; ROI and proposal cards are hidden until new results arrive.
-// showFallbackUI("analyzer") is called later only if the scan returns no job data.
+// showFallbackUI() is called later only if the scan returns no job data.
 function clearCachedUI() {
   scanInProgress = false;
 
@@ -191,8 +202,7 @@ function clearCachedUI() {
 
   // Hide ROI and proposal cards so stale data isn't visible during the scan
   roiScoreCard.classList.add("hide");
-  proposalGenCard.classList.add("hide");
-  proposalResultCard.classList.add("hide");
+  aiComingSoonCard.classList.add("hide");
 
   updateROIRadial(0, "#eab308");
   roiLabel.textContent = "Scanning...";
@@ -228,8 +238,7 @@ async function scanActivePage() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     
     if (!tab || !tab.url || !tab.url.includes("upwork.com")) {
-      showFallbackUI("analyzer");
-      showFallbackUI("optimizer");
+      showFallbackUI();
       return;
     }
     
@@ -264,8 +273,7 @@ function sendMessageToContentScript(tabId, message, retryCount = 0) {
         }, 300);
       } else {
         scanInProgress = false;
-        showFallbackUI("analyzer");
-        showFallbackUI("optimizer");
+        showFallbackUI();
       }
       return;
     }
@@ -274,7 +282,7 @@ function sendMessageToContentScript(tabId, message, retryCount = 0) {
       // nojob is a clean terminal state — no retry, just show fallback quietly
       if (response.data.type === 'nojob') {
         scanInProgress = false;
-        showFallbackUI("analyzer");
+        showFallbackUI();
         return;
       }
       if (!response.data.isLoaded && retryCount < 3) {
@@ -285,7 +293,7 @@ function sendMessageToContentScript(tabId, message, retryCount = 0) {
       handleScrapeResult(response.data);
     } else {
       scanInProgress = false;
-      showFallbackUI("analyzer");
+      showFallbackUI();
       // Genuine unexpected scrape failure — log it
       const errMsg = response?.error || 'Unknown scraping error';
       logError('sidepanel → sendMessageToContentScript', errMsg, '');
@@ -311,7 +319,6 @@ async function injectContentScript(tabId) {
 function handleScrapeResult(data) {
   if (data.type === "job") {
     currentScrapedJob = data;
-    currentScrapedProfile = null;
 
     // Display job card info
     scrapedJobTitle.textContent = data.title;
@@ -348,7 +355,7 @@ function handleScrapeResult(data) {
     jobPageStatus.querySelector(".status-text").textContent = "Upwork Job Details Scraped!";
     
     jobDetailsCard.classList.remove("hide");
-    proposalGenCard.classList.remove("hide");
+    aiComingSoonCard.classList.remove("hide");
     analyzerFallback.classList.add("hide");
     
     // Process ROI Score
@@ -367,12 +374,16 @@ function handleScrapeResult(data) {
             <p>${data.hiresCount} hire${data.hiresCount > 1 ? "s" : ""} made — your proposal is unlikely to be reviewed.</p>
           </div>
         </div>`;
+      currentRoi = null;
+      updateLogJobButton();
       roiScoreCard.classList.remove("hide");
-      showFallbackUI("optimizer");
       return;
     }
 
     const roi = calculateROIScore(data);
+    currentRoi = roi;
+    updateLogJobButton();
+    trackJobScored(data, roi);
     updateROIRadial(roi.score, roi.color);
     roiLabel.textContent = roi.label;
     roiLabel.style.backgroundColor = roi.color;
@@ -445,46 +456,21 @@ function handleScrapeResult(data) {
     });
 
     roiScoreCard.classList.remove("hide");
-
-    // Ensure optimizer fallback is visible since it's not a profile page
-    showFallbackUI("optimizer");
-  } else if (data.type === "profile") {
-    currentScrapedProfile = data;
-    currentScrapedJob = null;
-    
-    scrapedProfileTitle.textContent = data.title || "Main Profile Overview";
-    profileStatus.className = "status-alert success";
-    profileStatus.querySelector(".status-text").textContent = "Freelancer Profile Scraped!";
-    
-    profileDetectedCard.classList.remove("hide");
-    profileControlCard.classList.remove("hide");
-    optimizerFallback.classList.add("hide");
-    
-    // Ensure analyzer fallback is visible
-    showFallbackUI("analyzer");
   }
+  // Profile pages are ignored for now: the Profile Optimizer is coming soon.
 }
 
 // Fallback panels utility
-function showFallbackUI(tabType) {
-  if (tabType === "analyzer") {
-    currentScrapedJob = null;
-    jobPageStatus.className = "status-alert info";
-    jobPageStatus.querySelector(".status-text").textContent = "Detecting active Upwork job post...";
-    jobDetailsCard.classList.add("hide");
-    roiScoreCard.classList.add("hide");
-    proposalGenCard.classList.add("hide");
-    proposalResultCard.classList.add("hide");
-    analyzerFallback.classList.remove("hide");
-  } else if (tabType === "optimizer") {
-    currentScrapedProfile = null;
-    profileStatus.className = "status-alert info";
-    profileStatus.querySelector(".status-text").textContent = "Detecting your Upwork profile page...";
-    profileDetectedCard.classList.add("hide");
-    profileControlCard.classList.add("hide");
-    profileResultCard.classList.add("hide");
-    optimizerFallback.classList.remove("hide");
-  }
+function showFallbackUI() {
+  currentScrapedJob = null;
+  currentRoi = null;
+  updateLogJobButton();
+  jobPageStatus.className = "status-alert info";
+  jobPageStatus.querySelector(".status-text").textContent = "Detecting active Upwork job post...";
+  jobDetailsCard.classList.add("hide");
+  roiScoreCard.classList.add("hide");
+  aiComingSoonCard.classList.add("hide");
+  analyzerFallback.classList.remove("hide");
 }
 
 // Progress Ring Math
@@ -501,44 +487,17 @@ function updateROIRadial(score, color) {
   roiProgressRing.style.stroke = color;
 }
 
-// AI Settings Config UI Interactions
+// Professional context settings (local only)
 function setupSettingsUI() {
-  providerSelect.addEventListener("change", () => {
-    const val = providerSelect.value;
-    if (val === "gemini") {
-      geminiConfigBlock.classList.remove("hide");
-      anthropicConfigBlock.classList.add("hide");
-    } else {
-      anthropicConfigBlock.classList.remove("hide");
-      geminiConfigBlock.classList.add("hide");
-    }
-  });
-
   saveSettingsBtn.addEventListener("click", async () => {
     appSettings = {
-      provider: providerSelect.value,
-      anthropicKey: anthropicKeyInput.value.trim(),
-      anthropicModel: anthropicModelSelect.value,
-      geminiKey: geminiKeyInput.value.trim(),
-      geminiModel: geminiModelSelect.value,
       niche: settingsNicheInput.value.trim(),
       rate: settingsRateInput.value.trim(),
-      bio: settingsBioInput.value.trim(),
-      licenseKey: settingsLicenseInput.value.trim()
+      bio: settingsBioInput.value.trim()
     };
-
     await chrome.storage.local.set({ settings: appSettings });
-    
-    // Save Niche context to optimizer tab automatically
-    if (appSettings.niche) {
-      optimizerNicheInput.value = appSettings.niche;
-    }
-    
-    // Validate licensing badge
-    const license = await checkLicenseStatus();
-    updateLicenseBadge(license);
-    
-    saveStatusMsg.textContent = "Settings saved successfully!";
+
+    saveStatusMsg.textContent = "Saved!";
     saveStatusMsg.style.color = "var(--accent-green)";
     setTimeout(() => {
       saveStatusMsg.textContent = "";
@@ -546,176 +505,189 @@ function setupSettingsUI() {
   });
 }
 
-// Loads Saved Configuration
+// Loads saved settings. Older versions stored AI provider keys and a license key here; those
+// no longer exist (AI will run on the server), so strip them from storage.
 async function loadSettings() {
   const data = await chrome.storage.local.get(["settings"]);
-  if (data.settings) {
-    appSettings = data.settings;
-    
-    // Populate form elements
-    providerSelect.value = appSettings.provider || "anthropic";
-    providerSelect.dispatchEvent(new Event("change")); // Trigger visibility toggle
-    
-    anthropicKeyInput.value = appSettings.anthropicKey || "";
-    anthropicModelSelect.value = appSettings.anthropicModel || "claude-sonnet-4-6";
-    
-    geminiKeyInput.value = appSettings.geminiKey || "";
-    geminiModelSelect.value = appSettings.geminiModel || "gemini-2.5-flash";
-    
-    settingsNicheInput.value = appSettings.niche || "";
-    optimizerNicheInput.value = appSettings.niche || "";
-    settingsRateInput.value = appSettings.rate || "";
-    settingsBioInput.value = appSettings.bio || "";
-    settingsLicenseInput.value = appSettings.licenseKey || "";
+  const stored = data.settings || {};
+  const { niche = "", rate = "", bio = "" } = stored;
+  appSettings = { niche, rate, bio };
+
+  if (Object.keys(stored).some(k => !(k in appSettings))) {
+    await chrome.storage.local.set({ settings: appSettings });
   }
-  
-  // Set premium badge status
-  const license = await checkLicenseStatus();
-  updateLicenseBadge(license);
+
+  settingsNicheInput.value = niche;
+  settingsRateInput.value = rate;
+  settingsBioInput.value = bio;
 }
 
-function updateLicenseBadge(license) {
-  licenseBadge.textContent = license.tier === "premium" ? "Premium" : "Free Tier";
-  licenseBadge.className = `badge ${license.tier}`;
+// ─── Connection & tier ────────────────────────────────────────────────────────
+
+const CONNECT_ERRORS = {
+  invalid_code: "That key isn't valid, has expired, or was already used. Ask your admin for a new one.",
+  member_disabled: "Your access is disabled. Please contact your Exeve admin.",
+  device_limit: "This key's account has reached its device limit. Ask your admin to remove an old device.",
+  too_many_attempts: "Too many attempts. Wait a minute and try again.",
+  invalid_request: "Please check the key and try again.",
+  network: "Can't reach the Exeve server. Check your internet connection and try again."
+};
+
+const LOST_MESSAGES = {
+  member_disabled: "Your Exeve access was disabled. Contact your admin.",
+  default: "This device was disconnected. Enter your access key to keep tracking."
+};
+
+// Re-reads the stored connection and updates everything that depends on the tier.
+async function refreshTier() {
+  connection = await getConnection();
+  const connected = !!connection;
+
+  tierBadge.textContent = connected ? "Connected" : "Free";
+  tierBadge.className = `badge ${connected ? "connected" : "free-tier"}`;
+  tierBadge.title = connected ? `Connected as ${connection.member.name}` : "Free mode: job scoring only";
+
+  freeNotice.classList.toggle("hide", connected);
+  roiLocked.classList.toggle("hide", connected);
+  roiContent.classList.toggle("hide", !connected);
+  connConnected.classList.toggle("hide", !connected);
+  connForm.classList.toggle("hide", connected);
+  if (connected) connMemberName.textContent = connection.member.name;
+  updateLogJobButton();
+
+  // Pushes the member back to the connect screen when the engine ended their connection
+  const lost = connected ? null : await getConnectionLost();
+  connectionBanner.classList.toggle("hide", !lost);
+  if (lost) connectionBannerText.textContent = LOST_MESSAGES[lost.reason] || LOST_MESSAGES.default;
 }
 
-// Setup Proposal Draft Triggering
-btnGenerateProposal.addEventListener("click", async () => {
-  if (!currentScrapedJob) {
-    alert("Please scan an Upwork job details page first.");
-    return;
-  }
-  
-  const key = appSettings.provider === "anthropic" ? appSettings.anthropicKey : appSettings.geminiKey;
-  if (!key) {
-    alert(`Please enter your API Key for ${appSettings.provider === "anthropic" ? "Anthropic Claude" : "Google Gemini"} in the Settings tab first.`);
-    switchTab("settings-tab");
-    return;
-  }
-
-  // Toggle Spinner UI
-  btnGenerateProposal.disabled = true;
-  proposalSpinner.classList.remove("hide");
-  proposalResultCard.classList.add("hide");
-
-  try {
-    const tone = proposalToneSelect.value;
-    const prompt = buildProposalPrompt(currentScrapedJob, appSettings, tone);
-    
-    const response = await callLLM({
-      provider: appSettings.provider,
-      model: appSettings.provider === "anthropic" ? appSettings.anthropicModel : appSettings.geminiModel,
-      apiKey: key,
-      prompt: prompt
-    });
-
-    renderProposalResult(response);
-  } catch (err) {
-    logError('sidepanel → generateProposal', err.message, currentScrapedJob?.title || '', err.stack);
-    alert(`AI Generation Failed: ${err.message}`);
-  } finally {
-    btnGenerateProposal.disabled = false;
-    proposalSpinner.classList.add("hide");
-  }
-});
-
-function renderProposalResult(text) {
-  proposalResultCard.classList.remove("hide");
-  
-  // Render clean text structure
-  proposalOutputText.innerHTML = formatMarkdownHTML(text);
-  
-  // Scroll details into view
-  proposalResultCard.scrollIntoView({ behavior: "smooth" });
+function goToConnect() {
+  switchTab("settings-tab");
+  connCodeInput.focus();
 }
 
-// Profile SEO Audit trigger
-btnOptimizeProfile.addEventListener("click", async () => {
-  if (!currentScrapedProfile) {
-    alert("Please scan an Upwork profile editing page first.");
-    return;
-  }
-  
-  const key = appSettings.provider === "anthropic" ? appSettings.anthropicKey : appSettings.geminiKey;
-  if (!key) {
-    alert(`Please enter your API Key for ${appSettings.provider === "anthropic" ? "Anthropic Claude" : "Google Gemini"} in the Settings tab first.`);
-    switchTab("settings-tab");
-    return;
-  }
+function setupConnectionUI() {
+  // Any change to the stored connection (connect, disconnect, 401 from any tab) refreshes the UI
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && (changes.connection || changes.connectionLost)) refreshTier();
+  });
 
-  btnOptimizeProfile.disabled = true;
-  profileSpinner.classList.remove("hide");
-  profileResultCard.classList.add("hide");
+  [btnBannerConnect, btnFreeConnect, btnLockConnect].forEach(b => b.addEventListener("click", goToConnect));
 
-  try {
-    const nicheTarget = optimizerNicheInput.value.trim();
-    const prompt = buildProfilePrompt(currentScrapedProfile, nicheTarget);
-    
-    const response = await callLLM({
-      provider: appSettings.provider,
-      model: appSettings.provider === "anthropic" ? appSettings.anthropicModel : appSettings.geminiModel,
-      apiKey: key,
-      prompt: prompt
-    });
+  const showConnError = (msg) => {
+    connError.textContent = msg;
+    connError.classList.remove("hide");
+  };
 
-    profileResultCard.classList.remove("hide");
-    profileOutputText.innerHTML = formatMarkdownHTML(response);
-    profileResultCard.scrollIntoView({ behavior: "smooth" });
-  } catch (err) {
-    logError('sidepanel → optimizeProfile', err.message, '', err.stack);
-    alert(`Profile Optimization Failed: ${err.message}`);
-  } finally {
-    btnOptimizeProfile.disabled = false;
-    profileSpinner.classList.add("hide");
-  }
-});
+  btnConnect.addEventListener("click", async () => {
+    connError.classList.add("hide");
+    if (!connConsent.checked) return showConnError("Please read and accept the notice above to connect.");
+    if (!connCodeInput.value.trim()) return showConnError("Enter the access key from your Exeve admin.");
 
-// Copy Buttons Event Listeners
-btnCopyHooks.addEventListener("click", () => {
-  const content = proposalOutputText.textContent;
-  // Locate the hooks block (typically between ### 1. and ### 2.)
-  const hooksBlock = content.match(/Hooks[\s\S]*?(?=### 2\.|\-\-\-)/i);
-  const textToCopy = hooksBlock ? hooksBlock[0].trim() : content;
-  copyTextToClipboard(textToCopy, proposalCopyHint);
-});
+    btnConnect.disabled = true;
+    connSpinner.classList.remove("hide");
+    try {
+      const res = await connectWithCode(connCodeInput.value);
+      if (res.ok) {
+        connCodeInput.value = "";
+        connConsent.checked = false;
+        await refreshTier();
+        flush().catch(() => {});
+      } else {
+        showConnError(CONNECT_ERRORS[res.reason] || "Couldn't connect. Please try again or contact your admin.");
+      }
+    } catch (err) {
+      logError("sidepanel → connect", err.message, "", err.stack);
+      showConnError(CONNECT_ERRORS.network);
+    } finally {
+      btnConnect.disabled = false;
+      connSpinner.classList.add("hide");
+    }
+  });
 
-btnCopyProposal.addEventListener("click", () => {
-  const content = proposalOutputText.textContent;
-  // Locate proposal body (typically everything after ### 2. Tailored Proposal Body)
-  const proposalBlock = content.split(/Tailored Proposal Body/i)[1] || content;
-  copyTextToClipboard(proposalBlock.trim(), proposalCopyHint);
-});
-
-btnCopyProfile.addEventListener("click", () => {
-  const content = profileOutputText.textContent;
-  // Try to copy the bio rewrite section (everything after "Bio Rewrite")
-  const bioRewriteBlock = content.split(/Bio Rewrite/i)[1] || content;
-  copyTextToClipboard(bioRewriteBlock.trim(), profileCopyHint);
-});
-
-function copyTextToClipboard(text, hintEl) {
-  navigator.clipboard.writeText(text).then(() => {
-    hintEl.classList.add("show");
-    setTimeout(() => hintEl.classList.remove("show"), 2000);
-  }).catch(err => {
-    console.error("Clipboard copy failed:", err);
+  btnDisconnect.addEventListener("click", async () => {
+    if (confirm("Disconnect this device? Tracking stops until you connect again with a new key.")) {
+      await disconnect();
+      await refreshTier();
+    }
   });
 }
 
-// Log directly to ROI hub pre-filler
-btnLogProposal.addEventListener("click", () => {
-  if (!currentScrapedJob) return;
-  
-  // Prefill the form details
-  logTitleInput.value = currentScrapedJob.title;
-  logConnectsInput.value = currentScrapedJob.connectsNeeded || 16;
-  logBoostSelect.value = "none";
-  logStatusSelect.value = "applied";
-  
-  // Switch to ROI tab
-  switchTab("roi-tab");
-  logTitleInput.focus();
-});
+// ─── Tracking (Connected tier): events go through the offline outbox ──────────
+
+// Records a scanned job with its score inputs, at most once per change / 30 minutes. The latest
+// snapshot is always kept locally so a later apply-page capture can attach "the score as it was".
+async function trackJobScored(job, roi) {
+  try {
+    if (!connection || !job.isLoaded || !job.jobId) return;
+    const { scoredIndex = {} } = await chrome.storage.local.get("scoredIndex");
+    const prev = scoredIndex[job.jobId];
+    const sig = scoreSignature(job, roi);
+    const now = Date.now();
+    const due = shouldEmitJobScored(prev, now, sig);
+
+    if (due) await enqueue("job.scored", buildJobScoredPayload(job, roi), { scoringVersion: SCORING_VERSION });
+
+    scoredIndex[job.jobId] = {
+      at: due ? now : prev.at,
+      sig,
+      seenAt: now,
+      snapshot: buildScoreSnapshot(job, roi)
+    };
+    const newest = Object.entries(scoredIndex).sort((a, b) => b[1].seenAt - a[1].seenAt).slice(0, 200);
+    await chrome.storage.local.set({ scoredIndex: Object.fromEntries(newest) });
+  } catch (err) {
+    logError("sidepanel → trackJobScored", err.message, "", err.stack);
+  }
+}
+
+async function trackProposalSubmitted(log) {
+  try {
+    if (!log.jobId) return; // not linked to a job: stays local
+    const boostRank = boostRankNumber(log.boost);
+    await enqueue("proposal.submitted", {
+      jobId: log.jobId,
+      jobUrl: log.jobUrl || undefined,
+      title: log.title.slice(0, 300),
+      submittedAt: log.submittedAt,
+      source: "manual",
+      status: toCanonicalStatus(log.status),
+      connectsTotal: Number.isFinite(log.connects) ? log.connects : undefined,
+      ...(boostRank && { boostRank }),
+      scoreSnapshot: log.scoreSnapshot
+    }, { occurredAt: log.submittedAt, scoringVersion: SCORING_VERSION });
+  } catch (err) {
+    logError("sidepanel → trackProposalSubmitted", err.message, "", err.stack);
+  }
+}
+
+async function trackStatusChanged(log) {
+  try {
+    if (!log.jobId) return;
+    await enqueue("proposal.status_changed", {
+      jobId: log.jobId,
+      to: toCanonicalStatus(log.status),
+      source: "manual",
+      changedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    logError("sidepanel → trackStatusChanged", err.message, "", err.stack);
+  }
+}
+
+// "Log proposal" button on the job card: only for a scored, identifiable job while Connected
+function updateLogJobButton() {
+  const show = !!(connection && currentScrapedJob && currentScrapedJob.jobId && currentRoi);
+  btnLogJob.classList.toggle("hide", !show);
+}
+
+function updateLogLinkUI() {
+  logLinked.classList.toggle("hide", !pendingLogJob);
+  if (pendingLogJob) logLinkedTitle.textContent = pendingLogJob.title;
+  logSyncHint.textContent = pendingLogJob
+    ? "This proposal will sync to Exeve."
+    : "Not linked to a job, so it stays on this device. Use \"Log proposal\" on a scanned job to sync it.";
+}
 
 // Switch active tab by panel ID
 function switchTab(panelId) {
@@ -728,32 +700,69 @@ function setupROILogger() {
   proposalLogForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     
+    const linked = pendingLogJob;
     const newLog = {
       id: Date.now().toString(),
       date: new Date().toLocaleDateString(),
+      submittedAt: new Date().toISOString(),
       title: logTitleInput.value.trim(),
       connects: parseInt(logConnectsInput.value, 10),
       boost: logBoostSelect.value,
-      status: logStatusSelect.value
+      status: logStatusSelect.value,
+      // Linked entries carry the job id so they can sync; the score is frozen as it was when applying
+      ...(linked && { jobId: linked.jobId, jobUrl: linked.jobUrl, scoreSnapshot: linked.scoreSnapshot })
     };
 
-    proposalLogs.unshift(newLog); // Add to beginning of history
-    await chrome.storage.local.set({ logs: proposalLogs });
-    
+    proposalLogs = await updateLogs(logs => [newLog, ...logs]); // newest first
+    trackProposalSubmitted(newLog);
+
     // Reset form fields
     logTitleInput.value = "";
     logConnectsInput.value = 16;
     logBoostSelect.value = "none";
     logStatusSelect.value = "applied";
-    
+    pendingLogJob = null;
+    updateLogLinkUI();
+
     renderLogsList();
     updateROIStats();
   });
 
+  btnLogJob.addEventListener("click", () => {
+    if (!currentScrapedJob || !currentScrapedJob.jobId || !currentRoi) return;
+    pendingLogJob = {
+      jobId: currentScrapedJob.jobId,
+      jobUrl: currentScrapedJob.jobUrl,
+      title: currentScrapedJob.title,
+      scoreSnapshot: buildScoreSnapshot(currentScrapedJob, currentRoi)
+    };
+    logTitleInput.value = currentScrapedJob.title;
+    logConnectsInput.value = currentScrapedJob.connectsNeeded || 16;
+    logBoostSelect.value = "none";
+    logStatusSelect.value = "applied";
+    updateLogLinkUI();
+    switchTab("roi-tab");
+    logTitleInput.focus();
+  });
+
+  // Proposals captured from Upwork's apply page are written by the service worker
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.logs) {
+      proposalLogs = changes.logs.newValue || [];
+      renderLogsList();
+      updateROIStats();
+    }
+  });
+
+  btnUnlinkJob.addEventListener("click", () => {
+    pendingLogJob = null;
+    updateLogLinkUI();
+  });
+  updateLogLinkUI();
+
   btnClearHistory.addEventListener("click", async () => {
     if (confirm("Are you sure you want to delete all proposal tracking logs? This cannot be undone.")) {
-      proposalLogs = [];
-      await chrome.storage.local.set({ logs: proposalLogs });
+      proposalLogs = await updateLogs(() => []);
       renderLogsList();
       updateROIStats();
     }
@@ -810,12 +819,13 @@ function renderLogsList() {
 
     item.innerHTML = `
       <div class="history-item-details">
-        <div class="history-item-title" title="${log.title}">${log.title}</div>
+        <div class="history-item-title" title="${escapeHtml(log.title)}">${escapeHtml(log.title)}</div>
         <div class="history-item-sub">
           <span>${log.date}</span>
           <span class="spent">-${log.connects} connects${boostLabel}</span>
           <span>•</span>
-          <span class="status-badge ${log.status}">${log.status}</span>
+          <span class="status-badge ${escapeHtml(log.status)}">${escapeHtml(log.status)}</span>
+          ${log.jobId ? "" : '<span class="local-only-tag" title="Not linked to a job, so it stays on this device. Use \'Log proposal\' on a scanned job to sync.">local only</span>'}
         </div>
       </div>
       <button class="btn-delete-log" data-id="${log.id}">×</button>
@@ -834,23 +844,24 @@ function renderLogsList() {
 }
 
 async function cycleLogStatus(id) {
-  const logIndex = proposalLogs.findIndex(l => l.id === id);
-  if (logIndex === -1) return;
-  
   const statusCycle = ["applied", "interviewing", "hired", "rejected"];
-  const currentStatus = proposalLogs[logIndex].status;
-  const nextIndex = (statusCycle.indexOf(currentStatus) + 1) % statusCycle.length;
-  
-  proposalLogs[logIndex].status = statusCycle[nextIndex];
-  await chrome.storage.local.set({ logs: proposalLogs });
-  
+  let changed = null;
+
+  proposalLogs = await updateLogs(logs => {
+    const log = logs.find(l => l.id === id);
+    if (!log) return logs;
+    log.status = statusCycle[(statusCycle.indexOf(log.status) + 1) % statusCycle.length];
+    changed = log;
+    return logs;
+  });
+  if (changed) trackStatusChanged(changed);
+
   renderLogsList();
   updateROIStats();
 }
 
 async function deleteLog(id) {
-  proposalLogs = proposalLogs.filter(l => l.id !== id);
-  await chrome.storage.local.set({ logs: proposalLogs });
+  proposalLogs = await updateLogs(logs => logs.filter(l => l.id !== id));
   renderLogsList();
   updateROIStats();
 }
@@ -905,22 +916,4 @@ function escapeHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-// Mini Markdown-to-HTML parser to display rich formatting in results boxes
-function formatMarkdownHTML(md) {
-  if (!md) return "";
-  
-  return md
-    // Headers
-    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-    // Bold
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    // Bullet lists
-    .replace(/^\s*\-\s*(.*$)/gim, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>)/sim, '<ul>$1</ul>')
-    // Line breaks
-    .replace(/\n/g, '<br>');
 }

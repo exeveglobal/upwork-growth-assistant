@@ -415,8 +415,14 @@ function scrapeJobDetailsPage() {
 
   const rawText = cleanText(root.textContent || "");
 
+  // Upwork's stable job id appears in the URL (/jobs/Title_~0221..., /details/~0221..., /proposals/job/~0221...)
+  const jobIdMatch = url.match(/~[0-9A-Za-z]{10,40}/);
+  const jobId = jobIdMatch ? jobIdMatch[0] : null;
+
   return {
     type: "job",
+    jobId,
+    jobUrl: jobId ? `https://www.upwork.com/jobs/${jobId}` : null,
     title,
     description,
     clientCountry,

@@ -19,8 +19,14 @@
         <span class="sub">Growth & Connects ROI Assistant</span>
       </div>
     </div>
-    <div id="license-badge" class="badge free-tier">Free Tier</div>
+    <div id="tier-badge" class="badge free-tier" title="Free mode: job scoring only">Free</div>
   </header>
+
+  <!-- Shown when the engine ended this device's connection -->
+  <div id="connection-banner" class="connection-banner hide" role="alert">
+    <span id="connection-banner-text"></span>
+    <button id="btn-banner-connect" class="btn btn-secondary">Connect</button>
+  </div>
 
   <!-- Tab Buttons -->
   <nav class="tabs">
@@ -30,7 +36,7 @@
     </button>
     <button class="tab-btn" data-tab="optimizer-tab">
       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
-      Optimize <span class="beta-badge">[Beta]</span>
+      Optimize <span class="soon-badge">Soon</span>
     </button>
     <button class="tab-btn" data-tab="roi-tab">
       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -53,6 +59,12 @@
         <span class="status-text">Detecting active Upwork job post...</span>
       </div>
 
+      <!-- Free-mode notice (hidden when connected) -->
+      <div id="free-notice" class="free-notice">
+        Free mode: job scoring only.
+        <button id="btn-free-connect" class="btn-link">Connect with your Exeve key</button> to track proposals.
+      </div>
+
       <!-- Scraped Job Header (Hidden initially) -->
       <div id="job-details-card" class="card hide">
         <h3 id="scraped-job-title" class="job-title-scraped">React Developer for SaaS Dashboard</h3>
@@ -61,6 +73,7 @@
           <span id="scraped-job-country" class="meta-tag country hide"></span>
           <span id="scraped-job-connects" class="meta-tag connects">16 Connects</span>
         </div>
+        <button id="btn-log-job" class="btn btn-secondary btn-full log-job-btn hide">Log proposal for this job</button>
       </div>
 
       <!-- ROI Calculator Display (Hidden initially) -->
@@ -85,39 +98,10 @@
         </div>
       </div>
 
-      <!-- Proposal Generation Block -->
-      <div id="proposal-generation-card" class="card hide">
-        <div class="form-group">
-          <label for="proposal-tone">Proposal Copywriting Tone</label>
-          <select id="proposal-tone" class="form-input">
-            <option value="conversational" selected>Conversational & Inquisitive (Highly Recommended)</option>
-            <option value="case-study">Proof & Case Study Focused</option>
-            <option value="technical">Technical Consultant (Detailed Specs)</option>
-          </select>
-        </div>
-
-        <button id="btn-generate-proposal" class="btn btn-primary btn-full">
-          <span>Generate Strategic Proposal <span class="beta-badge">[Beta]</span></span>
-          <div class="spinner hide" id="proposal-spinner"></div>
-        </button>
-      </div>
-
-      <!-- Result Card (Hidden initially) -->
-      <div id="proposal-result-card" class="card hide">
-        <div class="result-header">
-          <h4>Proposal Draft</h4>
-          <span class="copy-success-hint" id="proposal-copy-hint">Copied!</span>
-        </div>
-
-        <div class="proposal-output-area">
-          <div id="proposal-output-text" class="markdown-preview"></div>
-        </div>
-
-        <div class="btn-group">
-          <button id="btn-copy-hooks" class="btn btn-secondary">Copy Hooks</button>
-          <button id="btn-copy-proposal" class="btn btn-secondary">Copy Proposal</button>
-          <button id="btn-log-proposal" class="btn btn-success">Log to ROI Hub</button>
-        </div>
+      <!-- AI proposal writer: coming soon -->
+      <div id="ai-coming-soon-card" class="card coming-soon hide">
+        <h4>AI Proposal Writer <span class="soon-badge">Coming soon</span></h4>
+        <p>Tailored hooks and full proposals are being built. You'll get them here once they launch.</p>
       </div>
 
       <!-- Fallback when no job page open -->
@@ -129,54 +113,26 @@
       </div>
     </section>
 
-    <!-- 2. OPTIMIZER TAB -->
+    <!-- 2. OPTIMIZER TAB (coming soon) -->
     <section id="optimizer-tab" class="tab-panel">
-      <div id="profile-status" class="status-alert info">
-        <span class="status-dot"></span>
-        <span class="status-text">Detecting your Upwork profile page...</span>
-      </div>
-
-      <div id="profile-detected-card" class="card hide">
-        <h3 id="scraped-profile-title" class="profile-title-scraped">Fullstack Engineer</h3>
-        <p class="profile-meta">Targeting Profile SEO optimization.</p>
-      </div>
-
-      <div id="profile-control-card" class="card hide">
-        <div class="form-group">
-          <label for="optimizer-niche">Specific Niche Focus (Optional)</label>
-          <input type="text" id="optimizer-niche" class="form-input" placeholder="e.g. Next.js SaaS, Python Data Scraping">
-          <small class="help-text">Guides the AI rewrite to emphasize specific keywords.</small>
-        </div>
-
-        <button id="btn-optimize-profile" class="btn btn-primary btn-full">
-          <span>Perform Profile SEO Audit</span>
-          <div class="spinner hide" id="profile-spinner"></div>
-        </button>
-      </div>
-
-      <!-- Audit Result (Hidden initially) -->
-      <div id="profile-result-card" class="card hide">
-        <div class="result-header">
-          <h4>Optimization Audit</h4>
-          <span class="copy-success-hint" id="profile-copy-hint">Copied!</span>
-        </div>
-        <div class="proposal-output-area">
-          <div id="profile-output-text" class="markdown-preview"></div>
-        </div>
-        <button id="btn-copy-profile" class="btn btn-secondary btn-full">Copy Optimized Bio</button>
-      </div>
-
-      <!-- Fallback when no profile page open -->
-      <div id="optimizer-fallback" class="fallback-panel">
-        <div class="fallback-icon">👤</div>
-        <h3>No Profile Page Detected</h3>
-        <p>To optimize your profile, navigate to your Upwork profile edit page (e.g. /freelancers/~...) and press scan.</p>
-        <button id="btn-reload-profile" class="btn btn-secondary">Scan Page</button>
+      <div class="fallback-panel">
+        <div class="fallback-icon">✨</div>
+        <h3>Profile Optimizer <span class="soon-badge">Coming soon</span></h3>
+        <p>AI-powered Upwork profile SEO audits are on the way.</p>
       </div>
     </section>
 
     <!-- 3. ROI HUB TAB -->
     <section id="roi-tab" class="tab-panel">
+      <!-- Shown when not connected -->
+      <div id="roi-locked" class="fallback-panel">
+        <div class="fallback-icon">🔒</div>
+        <h3>Connect to track your proposals</h3>
+        <p>ROI Hub records your proposals, Connects spend and outcomes. Enter the key from your Exeve admin to turn it on.</p>
+        <button id="btn-lock-connect" class="btn btn-primary">Connect</button>
+      </div>
+
+      <div id="roi-content">
       <!-- Analytics Grid -->
       <div class="stats-grid">
         <div class="stat-card">
@@ -200,6 +156,10 @@
       <!-- Proposal Logger Form -->
       <div class="card">
         <h4>Log Applied Proposal</h4>
+        <div id="log-linked" class="log-linked hide">
+          <span>Linked job: <strong id="log-linked-title"></strong></span>
+          <button type="button" id="btn-unlink-job" class="btn-link">Unlink</button>
+        </div>
         <form id="proposal-log-form" class="log-form">
           <div class="form-row">
             <div class="form-group flex-2">
@@ -235,6 +195,7 @@
           </div>
 
           <button type="submit" class="btn btn-success btn-full">Add to History</button>
+          <small id="log-sync-hint" class="help-text"></small>
         </form>
       </div>
 
@@ -245,55 +206,48 @@
           <button id="btn-clear-history" class="btn btn-danger-text">Clear All</button>
         </div>
         <div id="history-container" class="history-list">
-          <p class="empty-list-message">No proposals logged yet. Run analyses and click 'Log to ROI Hub' to record your bidding data.</p>
+          <p class="empty-list-message">No proposals logged yet. Add the proposals you send to record your bidding data.</p>
         </div>
       </div>
+      </div><!-- /roi-content -->
     </section>
 
     <!-- 4. SETTINGS TAB -->
     <section id="settings-tab" class="tab-panel">
+      <!-- Connection Card -->
       <div class="card">
-        <h4>AI Provider Configuration</h4>
-        
-        <div class="form-group">
-          <label for="settings-provider">Primary AI Engine</label>
-          <select id="settings-provider" class="form-input">
-            <option value="anthropic" selected>Anthropic Claude (Persuasive Copywriting)</option>
-            <option value="gemini">Google Gemini (Speed & Analysis)</option>
-          </select>
+        <h4>Exeve Connection</h4>
+
+        <!-- Connected state -->
+        <div id="conn-connected" class="hide">
+          <p class="conn-line"><span class="conn-dot"></span> Connected as <strong id="conn-member-name"></strong></p>
+          <small class="help-text">Your Upwork activity is being tracked and shared with your Exeve admin.</small>
+          <button id="btn-disconnect" class="btn btn-secondary btn-full conn-disconnect">Disconnect this device</button>
         </div>
 
-        <!-- Claude Config Block -->
-        <div id="anthropic-config-block" class="config-block">
-          <div class="form-group">
-            <label for="settings-anthropic-key">Anthropic Claude API Key</label>
-            <input type="password" id="settings-anthropic-key" class="form-input" placeholder="sk-ant-...">
-            <small class="help-text">Stores locally. Extension will query Anthropic direct endpoint.</small>
+        <!-- Free state -->
+        <div id="conn-form">
+          <div id="consent-box" class="consent-box">
+            <strong>Before you connect, here is what Exeve will see:</strong>
+            <ul>
+              <li>Upwork jobs you open, and the ROI score calculated for them</li>
+              <li>Proposals you submit: cover letter, bid, Connects spent, boost, and later status (interviewing, hired…)</li>
+              <li>How long you actively use Upwork (time only, never screen contents)</li>
+            </ul>
+            <p>Nothing outside upwork.com is tracked, and no passwords or client messages are collected. Your admin sees this in the Exeve dashboard. You can disconnect any time.</p>
           </div>
-          <div class="form-group">
-            <label for="settings-anthropic-model">Claude Model</label>
-            <select id="settings-anthropic-model" class="form-input">
-              <option value="claude-sonnet-4-6" selected>Claude Sonnet 4.6 (Latest · Best Quality)</option>
-              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Stable)</option>
-              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Fast & Affordable)</option>
-            </select>
-          </div>
-        </div>
+          <label class="checkbox-row"><input type="checkbox" id="conn-consent"> I understand and agree</label>
 
-        <!-- Gemini Config Block (Hidden initially) -->
-        <div id="gemini-config-block" class="config-block hide">
           <div class="form-group">
-            <label for="settings-gemini-key">Google Gemini API Key</label>
-            <input type="password" id="settings-gemini-key" class="form-input" placeholder="AIzaSy...">
-            <small class="help-text">Stores locally. Key is sent directly to Google APIs.</small>
+            <label for="conn-code">Access key</label>
+            <input type="text" id="conn-code" class="form-input" placeholder="XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" maxlength="40">
+            <small class="help-text">Your Exeve admin gives you this key. It works once.</small>
           </div>
-          <div class="form-group">
-            <label for="settings-gemini-model">Gemini Model</label>
-            <select id="settings-gemini-model" class="form-input">
-              <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Super Fast)</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Deep Analytics)</option>
-            </select>
-          </div>
+          <button id="btn-connect" class="btn btn-primary btn-full">
+            <span>Connect</span>
+            <div class="spinner hide" id="conn-spinner"></div>
+          </button>
+          <p id="conn-error" class="conn-error hide" role="alert"></p>
         </div>
       </div>
 
@@ -313,22 +267,12 @@
 
         <div class="form-group">
           <label for="settings-bio">Your Achievements & Resume Bio</label>
-          <textarea id="settings-bio" class="form-textarea" rows="8" placeholder="Summarize your credentials, major past projects, and core metrics. (e.g. 'Saved 200+ hours of operations for a healthcare client with a Python script; built a React Dashboard that handles 10k daily users')."></textarea>
-          <small class="help-text">This profile data is fed directly into Claude/Gemini to craft custom, highly personalized proposal drafts matching your real history.</small>
+          <textarea id="settings-bio" class="form-textarea" rows="8" placeholder="Summarize your credentials, major past projects, and core metrics."></textarea>
+          <small class="help-text">Saved on this device only. It will be used by the upcoming AI proposal writer.</small>
         </div>
       </div>
 
-      <!-- License Card -->
-      <div class="card">
-        <h4>Commercial Licensing</h4>
-        <div class="form-group">
-          <label for="settings-license">License Activation Key</label>
-          <input type="text" id="settings-license" class="form-input" placeholder="PREM-xxxx-xxxx">
-          <small class="help-text">Unlocks advanced automated search matching, dashboard synchronization, and automated email alerts. Enter key starting with 'PREM-' to unlock Premium mode.</small>
-        </div>
-      </div>
-
-      <button id="btn-save-settings" class="btn btn-primary btn-full">Save Configuration</button>
+      <button id="btn-save-settings" class="btn btn-primary btn-full">Save</button>
       <span class="save-status-msg" id="save-status-msg"></span>
 
       <!-- Error Log Card -->

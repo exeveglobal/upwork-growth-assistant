@@ -122,12 +122,10 @@ header {
   border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
-.badge.premium {
-  background-color: rgba(139, 92, 246, 0.15);
-  color: #c084fc;
-  border: 1px solid rgba(139, 92, 246, 0.35);
-  box-shadow: 0 0 8px rgba(139, 92, 246, 0.15);
-  animation: shine 3s infinite linear;
+.badge.connected {
+  background-color: rgba(16, 185, 129, 0.14);
+  color: var(--accent-green);
+  border: 1px solid rgba(16, 185, 129, 0.35);
 }
 
 /* Tabs Navigation */
@@ -871,6 +869,9 @@ details.bucket-section:not([open]) .bucket-summary::after {
 .history-item-sub .status-badge.interviewing { color: var(--accent-amber); font-weight: 500; }
 .history-item-sub .status-badge.hired { color: var(--accent-green); font-weight: bold; }
 .history-item-sub .status-badge.rejected { color: var(--accent-crimson); }
+.history-item-sub .status-badge.viewed { color: var(--primary-hover); }
+.history-item-sub .status-badge.withdrawn,
+.history-item-sub .status-badge.archived { color: var(--text-muted); }
 
 .btn-delete-log {
   background: transparent;
@@ -1011,3 +1012,111 @@ details.bucket-section:not([open]) .bucket-summary::after {
   line-height: 1.5;
   font-family: var(--font-body);
 }
+
+/* ── Tiers & connection ─────────────────────────────────────────────────── */
+.soon-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 10px;
+  color: var(--primary-hover);
+  background-color: rgba(139, 92, 246, 0.15);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  vertical-align: middle;
+}
+
+.connection-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 12px;
+  background-color: rgba(245, 158, 11, 0.12);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--accent-amber);
+}
+.connection-banner.hide { display: none !important; }
+
+.free-notice {
+  font-size: 12px;
+  color: var(--text-muted);
+  background-color: rgba(148, 163, 184, 0.08);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius-sm);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.free-notice.hide { display: none !important; }
+
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--primary-hover);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.coming-soon p { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+
+.consent-box {
+  font-size: 12px;
+  color: var(--text-muted);
+  background-color: rgba(139, 92, 246, 0.06);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: var(--border-radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.consent-box strong { color: var(--text-main); display: block; margin-bottom: 4px; }
+.consent-box ul { margin: 4px 0 6px 16px; }
+.consent-box li { margin-bottom: 2px; }
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.conn-line { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; background-color: var(--accent-green); }
+.conn-disconnect { margin-top: 12px; }
+.conn-error { color: var(--accent-crimson); font-size: 12px; margin-top: 8px; }
+.conn-error.hide { display: none !important; }
+
+#roi-locked { margin-top: 0; }
+
+/* ── Proposal logging & sync ─────────────────────────────────────────────── */
+.log-job-btn { margin-top: 12px; }
+.log-linked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background-color: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: var(--border-radius-sm);
+  padding: 6px 10px;
+  margin-bottom: 10px;
+}
+.log-linked strong { color: var(--text-main); }
+.log-linked.hide { display: none !important; }
+.local-only-tag {
+  font-size: 10px;
+  color: var(--text-muted);
+  border: 1px dashed var(--card-border);
+  border-radius: 8px;
+  padding: 0 6px;
+  cursor: help;
+}
+

@@ -1,6 +1,20 @@
 # Upwork Growth Assistant
 
-A Chrome Extension (Manifest V3) that sits in the browser side panel and helps freelancers win on Upwork by scoring the ROI of applying to a job, generating AI-written proposals via Claude or Gemini, optimizing profile SEO, and tracking connects spend over time.
+*A product of the EXEVE Growth Engine (EGE).* Connected members report to the EGE portal at https://ege.exeve.global.
+
+A Chrome Extension (Manifest V3) that sits in the browser side panel and helps freelancers win on Upwork by scoring the ROI of applying to a job and tracking proposals and Connects spend. AI proposal writing and profile optimization are coming soon.
+
+## Free vs Connected
+
+| | Free (no key) | Connected (Exeve key) |
+|---|---|---|
+| Job ROI score | ✅ local, nothing is sent anywhere | ✅ |
+| ROI Hub (proposal tracking) | 🔒 | ✅ |
+| AI proposal writer / profile optimizer | 🔜 coming soon | 🔜 coming soon |
+
+Agency members connect with a one-time access key issued by their Exeve admin (Settings → Exeve Connection). Connecting requires accepting a notice that lists what is tracked. If the admin revokes the device or disables the member, the extension drops back to Free and asks for a new key. If the server is unreachable, an existing connection is kept.
+
+The engine address is in `config.js`; for local development set `devEngineUrl` in `chrome.storage.local` (localhost / 127.0.0.1 only). `manifest.json` lists localhost host permissions for that; remove them in release builds.
 
 ---
 
@@ -9,9 +23,9 @@ A Chrome Extension (Manifest V3) that sits in the browser side panel and helps f
 | Feature | Description |
 |---|---|
 | **Connects ROI Score** | Weighted bucket algorithm scores every job 0–100 with an Apply / Consider / Skip verdict |
-| **AI Proposal Generator** | Sends scraped job data to Claude or Gemini and returns three hook options + a full tailored proposal |
-| **Profile SEO Optimizer** | Audits your Upwork profile overview, title, and skills against a target niche |
-| **ROI Hub Tracker** | Logs every proposal you submit with connects spent, boost position, and outcome status |
+| **AI Proposal Generator** | 🔜 Coming soon (will run on the server) |
+| **Profile SEO Optimizer** | 🔜 Coming soon |
+| **ROI Hub Tracker** | Logs proposals with connects spent, boost position, and outcome status (Connected only) |
 | **SPA Auto-Scanner** | Polls the active Upwork tab every 1.5 s and re-scans whenever the job changes |
 
 ---
@@ -22,7 +36,7 @@ A Chrome Extension (Manifest V3) that sits in the browser side panel and helps f
 2. Open Chrome → `chrome://extensions/` → enable **Developer Mode**.
 3. Click **Load unpacked** and select the project folder.
 4. Click the extension icon to open the side panel.
-5. Go to the **Settings** tab, enter your API key (Anthropic or Gemini), and save.
+5. Job scoring works immediately. To unlock tracking, open **Settings → Exeve Connection** and enter the access key from your Exeve admin.
 
 ---
 
@@ -30,13 +44,10 @@ A Chrome Extension (Manifest V3) that sits in the browser side panel and helps f
 
 | Field | Notes |
 |---|---|
-| **AI Provider** | `anthropic` (default) or `gemini` |
-| **Claude Model** | `claude-sonnet-4-6` recommended for proposal quality |
-| **Gemini Model** | `gemini-2.5-flash` for speed, `gemini-2.5-pro` for depth |
-| **Freelancer Niche** | Feeds into proposal and profile prompts as keyword context |
-| **Target Hourly Rate** | Shown to the AI to frame rate-related proposal lines |
-| **Achievements Bio** | Multi-line summary of past projects fed verbatim into proposal prompts |
-| **License Key** | Keys prefixed `PREM-` unlock Premium tier |
+| **Exeve Connection** | Access key from your admin; connect / disconnect this device |
+| **Freelancer Niche, Target Hourly Rate, Achievements Bio** | Stored on this device only; will feed the upcoming AI proposal writer |
+
+Older versions stored AI provider keys and a license key in settings; they are removed from storage automatically.
 
 ---
 
@@ -49,10 +60,24 @@ content.js             Injected into Upwork tabs — DOM scraper
 sidepanel.html         Side panel markup (4 tabs)
 sidepanel.css          Dark-theme styles
 sidepanel.js           Side panel controller — orchestrates scraping, scoring, AI calls
-utils.js               Shared module — ROI scorer, prompt builders, API clients
+utils.js               Shared module — ROI scorer, error log
+connection.js          Exeve engine connection: connect with key, device token, 401 handling, tier
+outbox.js              Offline-safe event queue + sender (also driven by background.js alarms)
+apply-capture.js       Content script: reads the Upwork "Submit a proposal" form when Send is clicked
+capture.js             Service-worker side: confirms a send (tab leaves the apply page), queues + logs it
+logs.js                ROI Hub history storage shared by the side panel and the service worker
+proposals-scan.js      Content script: reads rows on Upwork's Proposals page while the member has it open
+proposals-sync.js      Service worker: matches rows to known proposals, verifies them, updates status
+activity.js            Content script: counts active 5-second slices (visible tab + recent input)
+activity-sync.js       Service worker: de-duplicates slices, sends per-day active-time deltas
+tracking.js            Pure helpers: scored-job / proposal event payloads, status mapping, dedupe rules
+config.js              Engine URL and consent-notice version
+test/                  Unit tests (`npm test`, Node's built-in runner, no dependencies)
 ```
 
-The extension runs entirely client-side. No backend server is involved. API keys are stored in `chrome.storage.local` and sent directly to Anthropic / Google endpoints.
+When connected, proposals you send on Upwork are captured automatically (cover letter, bid or hourly rate, Connects and boost, which pool you applied from, screening answers) and appear in the ROI Hub with no manual entry. Opening Upwork's Proposals page verifies them and keeps their status current (submitted → interviewing → hired / archived); active time on Upwork is tracked as seconds only. Scanned jobs, proposals and status changes are queued in an outbox and sent to the engine (retried automatically when offline). Free tier sends nothing.
+
+Free tier is entirely client-side. When connected, the extension talks to the Exeve growth engine with a per-device token; any 401 from the engine ends the connection. No API keys or provider endpoints exist in this extension.
 
 ---
 
@@ -285,29 +310,7 @@ Positive signals render in green, negative in crimson, neutral in muted grey. Ea
 
 ---
 
-### 4. AI Integration — `utils.js → callLLM()`
-
-Dispatches to either provider based on `settings.provider`:
-
-```
-callLLM({ provider, model, apiKey, prompt })
-  ├─ "gemini"    → callGemini()  → generativelanguage.googleapis.com
-  └─ "anthropic" → callClaude()  → api.anthropic.com/v1/messages
-```
-
-Claude calls require the `anthropic-dangerous-direct-browser-access: true` header to allow direct extension-to-API calls. Default model: `claude-sonnet-4-6`. Max tokens: 2048.
-
-#### Proposal Prompt Structure
-
-The prompt fed to the AI contains four sections:
-- `JOB POST DETAILS` — title, client name, budget, type, description
-- `FREELANCER CONTEXT` — bio, niche, rate
-- `INSTRUCTIONS & CUSTOMER PSYCHOLOGY RULES` — 7 rules (no templates, first-2-lines hook, no AI clichés, low-friction CTA, etc.)
-- `OUTPUT FORMAT` — mandates exactly: three hook options (A/B/C) + a full proposal body under 250 words
-
----
-
-### 5. ROI Hub Tracker — `sidepanel.js`
+### 4. ROI Hub Tracker — `sidepanel.js`
 
 Proposal logs are stored in `chrome.storage.local` under the key `logs`. Each log entry:
 
@@ -357,9 +360,8 @@ Upwork frequently changes its DOM. If structured selectors miss, the scraper fal
 ```
 sidepanel.html
   └─ sidepanel.js  (ES module, type="module")
-       ├─ imports utils.js  (calculateROIScore, buildProposalPrompt,
-       │                     buildProfilePrompt, callLLM, checkLicenseStatus,
-       │                     getConnectsTier)
+       ├─ imports utils.js       (calculateROIScore, getConnectsTier, error log)
+       ├─ imports connection.js  (connect, verify, disconnect)
        └─ messages content.js  (scrapePage, checkPageIdentifier)
             └─ runs inside the active Upwork tab
 ```
