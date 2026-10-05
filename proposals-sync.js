@@ -7,7 +7,7 @@
 
 import { getConnection } from './connection.js';
 import { enqueue } from './outbox.js';
-import { updateLogs } from './logs.js';
+import { updateLogs, normalizeTitle } from './logs.js';
 import { toCanonicalStatus, toLocalStatus } from './tracking.js';
 import { recordCheck } from './proposals-check.js';
 
@@ -21,7 +21,7 @@ export function parseInitiated(text) {
   return month === undefined ? null : new Date(Number(m[3]), month, Number(m[2]));
 }
 
-export const normalizeTitle = (t) => (t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+export { normalizeTitle };
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
 /** Canonical status a row implies, or null when the row can't be interpreted. */

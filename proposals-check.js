@@ -29,7 +29,7 @@ export function computeNudge(logs, check = {}, now = Date.now()) {
 
   const missing = open.filter(l => (check.missingJobIds || []).includes(l.jobId));
   if (missing.length && (check.archivedAt || 0) < (check.activeAt || 0)) {
-    return { kind: 'archive', count: missing.length, url: ARCHIVED_URL };
+    return { kind: 'archive', count: missing.length, url: ARCHIVED_URL, titles: missing.slice(0, 3).map(l => l.title || 'Untitled'), more: Math.max(0, missing.length - 3) };
   }
 
   // Never checked: the clock starts when the oldest open proposal was sent, so a brand-new one is not nagged about

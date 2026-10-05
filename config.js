@@ -5,4 +5,5 @@ export const DEFAULT_ENGINE_URL = 'https://ege.exeve.global';
 
 // Version of the tracking notice shown before connecting (sidepanel.html #consent-box).
 // Bump it whenever that text changes; the engine records which version each device accepted.
-export const CONSENT_VERSION = 1;
+// 2: states that pages are only read while the member has them open, and adds the proposals check-in time
+export const CONSENT_VERSION = 2;

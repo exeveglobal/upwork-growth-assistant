@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { installChrome } from './fake-chrome.mjs';
 
 installChrome();
-const { applyManualLog, upsertCapturedLog, roiCounts, connectsLabel } = await import('../logs.js');
+const { applyManualLog, upsertCapturedLog, roiCounts, connectsLabel, findLoggedByTitle, normalizeTitle } = await import('../logs.js');
 
 const captured = () => ({ id: '1', jobId: '~J', title: 'T', connects: 14, boost: 'none', status: 'applied', source: 'capture', submittedAt: '2026-10-04T10:00:00.000Z' });
 const manual = (over = {}) => ({ id: '2', jobId: '~J', title: 'T', connects: 14, boost: 'none', status: 'applied', ...over });
@@ -82,4 +82,29 @@ test('a captured boosted proposal keeps what the total was made of, and a hand o
   const r = applyManualLog(logs, { ...manual({ jobId: '~B', connects: 31, boost: 'rank2' }) });
   assert.equal(r.log.connectsJob, undefined);
   assert.equal(connectsLabel(r.log), '31 connects');
+});
+
+test('a hand entry with the title of exactly one synced proposal finds it; anything unclear does not', () => {
+  const logs = [
+    { id: '1', jobId: '~A', title: 'WordPress Developer Needed!', connects: 20 },
+    { id: '2', jobId: '~B', title: 'Website redesign', connects: 14 },
+    { id: '3', jobId: '~C', title: 'Website  Redesign', connects: 14 },
+    { id: '4', title: 'Local only job', connects: 10 }
+  ];
+  assert.equal(findLoggedByTitle(logs, '  wordpress developer needed ').jobId, '~A', 'case, spacing and punctuation do not matter');
+  assert.equal(findLoggedByTitle(logs, 'website redesign'), null, 'two proposals share the title: do not guess');
+  assert.equal(findLoggedByTitle(logs, 'Local only job'), null, 'a device-only entry has no job to sync to');
+  assert.equal(findLoggedByTitle(logs, 'Something else'), null);
+  assert.equal(findLoggedByTitle(logs, '   '), null);
+  assert.equal(normalizeTitle('Café – Redesign!'), 'café redesign');
+});
+
+test('matching by title turns a typed correction into an override of the synced entry, not a device-only copy', () => {
+  const logs = [{ id: '1', jobId: '~A', title: 'Design Project', connects: 20, boost: 'none', status: 'applied', source: 'capture' }];
+  const match = findLoggedByTitle(logs, 'design project');
+  const r = applyManualLog(logs, { id: '9', jobId: match.jobId, title: 'design project', connects: 29, boost: 'none', status: 'applied' });
+  assert.equal(r.action, 'overridden');
+  assert.equal(r.logs.length, 1);
+  assert.equal(r.log.connects, 29);
+  assert.equal(r.log.jobId, '~A', 'still synced');
 });

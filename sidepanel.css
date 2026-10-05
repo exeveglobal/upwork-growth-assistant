@@ -865,7 +865,9 @@ details.bucket-section:not([open]) .bucket-summary::after {
   font-size: 11px;
   color: var(--text-muted);
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
   margin-top: 2px;
 }
 
@@ -1184,3 +1186,26 @@ details.bucket-section:not([open]) .bucket-summary::after {
   line-height: 1.4;
 }
 .check-banner .btn { padding: 6px 12px; font-size: 12px; white-space: nowrap; }
+
+.btn-edit-log {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: var(--transition-fast);
+}
+.btn-edit-log:hover { color: var(--primary-text); background-color: rgba(254, 76, 28, 0.12); }
+
+.check-banner-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.check-banner small { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+.shared-details { margin-top: 10px; font-size: 12px; color: var(--text-muted); }
+.shared-details summary { cursor: pointer; color: var(--text-main); font-weight: 600; }
+.shared-details ul { margin: 8px 0 8px 18px; }
+.shared-details p { line-height: 1.45; }

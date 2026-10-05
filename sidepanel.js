@@ -16,7 +16,7 @@ import {
   verifyConnection
 } from './connection.js';
 import { enqueue, flush } from './outbox.js';
-import { updateLogs, recordManualLog, roiCounts, connectsLabel } from './logs.js';
+import { updateLogs, recordManualLog, roiCounts, connectsLabel, findLoggedByTitle } from './logs.js';
 import { scanDisplay, PARTIAL_AFTER_TICKS } from './scan-state.js';
 import { refreshNudge } from './proposals-check.js';
 import { readDiag, formatDiag, clearDiag } from './diag.js';
@@ -206,6 +206,7 @@ function setupCheckBanner() {
   const banner = document.getElementById("check-banner");
   const text = document.getElementById("check-banner-text");
   const button = document.getElementById("btn-check-open");
+  const note = document.getElementById("check-banner-note");
   let url = null;
 
   const render = (nudge) => {
@@ -217,11 +218,15 @@ function setupCheckBanner() {
     if (nudge.kind === "archive") {
       text.textContent = `${n} proposal${n === 1 ? " has" : "s have"} left your Active list. Open Archived so their outcome can be recorded.`;
       button.textContent = "Open Archived";
+      // Upwork pages the list 10 at a time and we never load pages for the member: say what to look for
+      const names = (nudge.titles || []).map(t => `“${t}”`).join(", ");
+      note.textContent = `Upwork shows 10 proposals per page, and only the page you have open is read. Look for ${names}${nudge.more ? ` and ${nudge.more} more` : ""}; if they are not listed, open the next page.`;
     } else {
       text.textContent = nudge.never
         ? `You have ${proposals}. Open your Proposals page so their status can be updated.`
         : `Your proposals haven't been checked for ${nudge.days} days (${proposals}). Open your Proposals page to update them.`;
       button.textContent = "Open Proposals";
+      note.textContent = "Opening the page is enough: its statuses are read while you look. Nothing is clicked or sent for you.";
     }
   };
 
@@ -905,6 +910,9 @@ function updateLogJobButton() {
 function updateLogLinkUI() {
   logLinked.classList.toggle("hide", !pendingLogJob);
   if (pendingLogJob) logLinkedTitle.textContent = pendingLogJob.title;
+  // "Save changes" when the form is editing a proposal that is already logged
+  const editing = !!(pendingLogJob && proposalLogs.some(l => l.jobId === pendingLogJob.jobId));
+  document.getElementById("log-submit").textContent = editing ? "Save changes" : "Add to History";
   logSyncHint.textContent = pendingLogJob
     ? "This proposal will sync to Exeve."
     : "Not linked to a job, so it stays on this device. Use \"Log proposal\" on a scanned job to sync it.";
@@ -921,7 +929,17 @@ function setupROILogger() {
   proposalLogForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     
-    const linked = pendingLogJob;
+    let linked = pendingLogJob;
+    // Typed in by hand but clearly the same proposal as one already logged: update that one, so the
+    // correction reaches the dashboard instead of sitting in an on-device copy.
+    let matchedExisting = false;
+    if (!linked) {
+      const match = findLoggedByTitle(proposalLogs, logTitleInput.value);
+      if (match) {
+        linked = { jobId: match.jobId, jobUrl: match.jobUrl, title: match.title, scoreSnapshot: match.scoreSnapshot };
+        matchedExisting = true;
+      }
+    }
     const newLog = {
       id: Date.now().toString(),
       date: new Date().toLocaleDateString(),
@@ -947,7 +965,7 @@ function setupROILogger() {
     }
     const message = {
       created: "",
-      overridden: "Updated the logged proposal. The earlier values are kept in its history.",
+      overridden: (matchedExisting ? "Matched your existing proposal for this job and updated it. " : "Updated the logged proposal. ") + "The earlier values are kept in its history.",
       unchanged: "Already logged with the same details. Nothing changed."
     }[result.action];
 
@@ -1057,17 +1075,34 @@ function renderLogsList() {
           ${log.jobId ? "" : '<span class="local-only-tag" title="Not linked to a job, so it stays on this device. Use \'Log proposal\' on a scanned job to sync.">local only</span>'}
         </div>
       </div>
-      <button class="btn-delete-log" data-id="${log.id}">×</button>
+      ${log.jobId ? `<button class="btn-edit-log" data-id="${log.id}" title="Edit connects, boost or status" aria-label="Edit this proposal">✎</button>` : ""}
+      <button class="btn-delete-log" data-id="${log.id}" aria-label="Delete this entry">×</button>
     `;
     
     // Status changed by hand (e.g. the client viewed or replied)
     item.querySelector(".status-select").addEventListener("change", (e) => setLogStatus(log.id, e.target.value));
+
+    const edit = item.querySelector(".btn-edit-log");
+    if (edit) edit.addEventListener("click", () => startEditingLog(log));
 
     // Bind delete listener
     item.querySelector(".btn-delete-log").addEventListener("click", () => deleteLog(log.id));
     
     historyContainer.appendChild(item);
   });
+}
+
+// Loads a synced proposal into the form, linked to its job, so saving updates it (and its history)
+function startEditingLog(log) {
+  pendingLogJob = { jobId: log.jobId, jobUrl: log.jobUrl, title: log.title, scoreSnapshot: log.scoreSnapshot };
+  logTitleInput.value = log.title;
+  logConnectsInput.value = log.connects;
+  logBoostSelect.value = log.boost;
+  logStatusSelect.value = MANUAL_STATUSES.some(([v]) => v === log.status) ? log.status : "applied";
+  updateLogLinkUI();
+  logSyncHint.textContent = "Editing a logged proposal. Saving updates it and keeps its earlier values in its history.";
+  proposalLogForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  logConnectsInput.focus();
 }
 
 // Tooltip text: every earlier version of a proposal, oldest first

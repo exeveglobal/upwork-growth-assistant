@@ -18,6 +18,14 @@ The engine address is in `config.js`; for local development set `devEngineUrl` i
 
 ---
 
+## Working within Upwork
+The extension is built to stay inside how Upwork works for a person using it:
+- It only **reads pages the member opens themselves**. It never clicks, scrolls, loads or navigates Upwork pages, and never submits or sends anything for the member.
+- It does not read messages. It reads job pages, the apply form at the moment the member clicks Send, and the Proposals lists while they are on screen.
+- Reminders (toolbar badge and a panel banner) ask the member to open their Proposals page; the button opens it on the member's own click.
+- Upwork lists archived proposals 10 per page. Only the rows on the page the member has open are updated; the reminder names the proposals to look for.
+- The notice shown before connecting says all of this, and its version (`CONSENT_VERSION`) is raised whenever the wording or the data collected changes.
+
 ## Features
 
 | Feature | Description |

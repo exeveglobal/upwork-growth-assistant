@@ -41,6 +41,7 @@ test('proposals that dropped off the Active list ask for a look at Archived, unt
   const check = { activeAt: NOW - 1000, missingJobIds: ['~J1'] };
   const n = computeNudge(logs, check, NOW);
   assert.deepEqual([n.kind, n.count, n.url], ['archive', 1, 'https://www.upwork.com/nx/proposals/archived']);
+  assert.deepEqual([n.titles, n.more], [['Website redesign'], 0], 'names what to look for in the (paged) Archived list');
   assert.equal(computeNudge(logs, { ...check, archivedAt: NOW }, NOW), null, 'archive visited after the active check');
   assert.equal(computeNudge([log({ status: 'rejected', submittedAt: ago(6) }), logs[1]], check, NOW), null, 'closed by hand meanwhile');
 });
@@ -83,4 +84,10 @@ test('without a key nothing is tracked or nagged', async () => {
   await handleProposalsRows([], NOW, 'active');
   assert.equal(env.store.proposalsCheck, undefined);
   assert.equal(env.store.nudge, undefined);
+});
+
+test('the archive reminder names at most three proposals and counts the rest', () => {
+  const logs = ['A', 'B', 'C', 'D', 'E'].map((x, i) => log({ jobId: '~J' + i, title: 'Job ' + x, submittedAt: ago(6) }));
+  const n = computeNudge(logs, { activeAt: NOW - 1000, missingJobIds: logs.map(l => l.jobId) }, NOW);
+  assert.deepEqual([n.titles, n.more, n.count], [['Job A', 'Job B', 'Job C'], 2, 5]);
 });

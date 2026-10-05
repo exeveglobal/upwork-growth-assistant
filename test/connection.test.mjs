@@ -30,6 +30,7 @@ const {
   connectWithCode, disconnect, authFetch, verifyConnection, getConnection, getConnectionLost,
   NotConnectedError, deviceLabel
 } = await import('../connection.js');
+const { CONSENT_VERSION } = await import('../config.js');
 
 beforeEach(() => {
   store = {};
@@ -46,7 +47,7 @@ test('connect: sends code + consent version, stores connection', async () => {
 
   assert.equal(calls[0].url, 'https://ege.exeve.global/v1/connect');
   assert.deepEqual(JSON.parse(calls[0].init.body), {
-    code: 'abcd-efgh-2345-wxyz', deviceLabel: 'Chrome on macOS', consentVersion: 1
+    code: 'abcd-efgh-2345-wxyz', deviceLabel: 'Chrome on macOS', consentVersion: CONSENT_VERSION
   });
   const conn = await getConnection();
   assert.equal(conn.token, 'ege_tok');
@@ -188,4 +189,8 @@ test('disconnect: clears the connection quietly', async () => {
 
 test('deviceLabel is a readable string', () => {
   assert.match(deviceLabel(), /^\w+ on [\w ]+$/);
+});
+
+test('the consent notice version was raised with the new wording (members must accept the current text)', () => {
+  assert.ok(CONSENT_VERSION >= 2);
 });

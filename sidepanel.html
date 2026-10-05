@@ -28,7 +28,10 @@
 
   <!-- Asks the member to open their Proposals page (statuses are read from it while they look) -->
   <div id="check-banner" class="check-banner hide" role="status">
-    <span id="check-banner-text"></span>
+    <span class="check-banner-body">
+      <span id="check-banner-text"></span>
+      <small id="check-banner-note"></small>
+    </span>
     <button id="btn-check-open" class="btn btn-primary">Open Proposals</button>
   </div>
 
@@ -201,7 +204,7 @@
             </div>
           </div>
 
-          <button type="submit" class="btn btn-success btn-full">Add to History</button>
+          <button type="submit" id="log-submit" class="btn btn-success btn-full">Add to History</button>
           <small id="log-sync-hint" class="help-text"></small>
         </form>
       </div>
@@ -229,6 +232,16 @@
         <div id="conn-connected" class="hide">
           <p class="conn-line"><span class="conn-dot"></span> Connected as <strong id="conn-member-name"></strong></p>
           <small class="help-text">Your Upwork activity is being tracked and shared with your Exeve admin.</small>
+          <details class="shared-details">
+            <summary>What is shared</summary>
+            <ul>
+              <li>Upwork jobs you open, and their ROI score</li>
+              <li>Proposals you submit: cover letter, bid, Connects, boost, and later status</li>
+              <li>How long you actively use Upwork (time only)</li>
+              <li>When you last looked at your Proposals page</li>
+            </ul>
+            <p>The extension only reads pages you open yourself. It never clicks, scrolls, loads pages or sends anything on Upwork for you, and it does not read messages. Upwork lists proposals 10 per page, so only the proposals on the page you have open can be updated.</p>
+          </details>
           <button id="btn-disconnect" class="btn btn-secondary btn-full conn-disconnect">Disconnect this device</button>
         </div>
 
@@ -240,7 +253,9 @@
               <li>Upwork jobs you open, and the ROI score calculated for them</li>
               <li>Proposals you submit: cover letter, bid, Connects spent, boost, and later status (interviewing, hired…)</li>
               <li>How long you actively use Upwork (time only, never screen contents)</li>
+              <li>When you last looked at your Proposals page, so you can be reminded to open it every few days</li>
             </ul>
+            <p><strong>How it works with Upwork:</strong> the extension only reads pages you open yourself. It never clicks, scrolls, loads pages or sends anything on Upwork for you, and it does not read your messages. Upwork lists proposals 10 per page, so only the proposals on the page you have open can be updated.</p>
             <p>Nothing outside upwork.com is tracked, and no passwords or client messages are collected. Your admin sees this in the Exeve dashboard. You can disconnect any time.</p>
           </div>
           <label class="checkbox-row"><input type="checkbox" id="conn-consent"> I understand and agree</label>

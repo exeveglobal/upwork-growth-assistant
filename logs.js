@@ -118,3 +118,18 @@ export function roiCounts(logs) {
     responseRatePct: total > 0 ? Math.round((responded / total) * 100) : 0
   };
 }
+
+/** Titles compare equal regardless of case, punctuation and spacing (also used to match Upwork's list rows). */
+export const normalizeTitle = (t) => (t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/**
+ * The one synced proposal (it has a job id) whose title equals `title`, or null. Used when a hand entry
+ * is not linked to a job: if it is clearly about a proposal already logged it updates that one instead of
+ * creating an on-device copy that would never reach the dashboard. Two matches or none: null.
+ */
+export function findLoggedByTitle(logs, title) {
+  const key = normalizeTitle(title);
+  if (!key) return null;
+  const matches = logs.filter(l => l.jobId && normalizeTitle(l.title) === key);
+  return matches.length === 1 ? matches[0] : null;
+}
