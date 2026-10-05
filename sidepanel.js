@@ -182,7 +182,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Re-scan when the user switches browser tabs.
   // Use a sentinel so the 1.5s polling absorbs the identifier update
   // without triggering a second scan on top of this one.
-  chrome.tabs.onActivated.addListener(() => {
+  // Only this window's tab switches count: with several Chrome windows open, each has its own panel,
+  // and working in another window must not clear this one.
+  let myWindowId = null;
+  chrome.windows.getCurrent().then(w => { myWindowId = w.id; }).catch(() => {});
+  chrome.tabs.onActivated.addListener((info) => {
+    if (myWindowId !== null && info.windowId !== myWindowId) return;
     lastPageIdentifier = "__tab_switch__";
     clearCachedUI();
     setTimeout(() => scanActivePage(), 800);
@@ -448,7 +453,9 @@ function handleScrapeResult(data) {
     }
 
     jobPageStatus.className = "status-alert success";
-    jobPageStatus.querySelector(".status-text").textContent = "Upwork Job Details Scraped!";
+    jobPageStatus.querySelector(".status-text").textContent = data.stalePage
+      ? `This page has been open for ${data.pageAgeMin} min, so its numbers may be old. Reload the job page for a fresh score.`
+      : "Upwork Job Details Scraped!";
     
     jobDetailsCard.classList.remove("hide");
     aiComingSoonCard.classList.remove("hide");

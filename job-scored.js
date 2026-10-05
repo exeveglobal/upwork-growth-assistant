@@ -23,6 +23,7 @@ export function handleJobScraped(job, now = Date.now()) {
 
 async function record(job, now) {
   if (!job || job.type !== 'job' || !job.isLoaded || !job.jobId) return null;
+  if (job.stalePage) return null; // an old tab brought back to the front: not a fresh sighting
   const roi = calculateROIScore(job);
   const { scoredIndex = {} } = await chrome.storage.local.get('scoredIndex');
   const prev = scoredIndex[job.jobId];

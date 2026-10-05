@@ -111,6 +111,7 @@ function getPageIdentifier() {
   return `nonjob:${url}`;
 }
 
+const STALE_PAGE_MIN = 30;
 const JOB_ID_IN_URL = /~[0-9A-Za-z]{10,40}/;
 const APPLY_PATH_RE = /^\/nx\/proposals\/job\/(~[0-9A-Za-z]{10,40})\/apply/;
 
@@ -145,10 +146,18 @@ function readApplyState() {
   const text = (document.querySelector('main') || document.body).innerText || '';
   // Same parser as the capture on this page (both Upwork wordings of the job's own Connects cost)
   const parsed = globalThis.__ugaApplyCapture ? globalThis.__ugaApplyCapture.parseSummary(text) : {};
+  // Only the page's alert banners are considered: the rest of the page holds the job description and
+  // unrelated notices (e.g. "Specialized Profiles are no longer available") that must not match.
+  const alerts = [...document.querySelectorAll("[role='alert'], .air3-alert, .alerts")].map(a => a.innerText || a.textContent || '');
   return {
     connectsRequired: parsed.connectsRequired ?? null,
-    jobClosed: /no longer (available|accepting)|job (is|has been) (closed|removed|filled)/i.test(text)
+    jobClosed: jobClosedIn(alerts)
   };
+}
+
+/** True when an alert banner says THIS JOB is gone ("This job is no longer available."), and nothing looser. */
+function jobClosedIn(alertTexts) {
+  return alertTexts.some(t => /\b(this )?job (is|was|has been) (no longer (available|accepting)|closed|removed|filled)\b/i.test(t || ''));
 }
 
 function scrapeCurrentPage() {
@@ -518,6 +527,11 @@ function scrapeJobDetailsPage() {
     if (name) { clientName = name; break; }
   }
 
+  // A full job page left open for a long time shows what it showed when it loaded. Such numbers
+  // must not be recorded as "just seen" when the tab is brought back to the front.
+  const pageAgeMin = Math.round((Date.now() - performance.timeOrigin) / 60000);
+  const stalePage = /^\/jobs\//.test(location.pathname) && pageAgeMin > STALE_PAGE_MIN;
+
   const rawText = cleanText(root.textContent || "");
 
   // Upwork's stable job id appears in the URL (/jobs/Title_~0221..., /details/~0221..., /proposals/job/~0221...)
@@ -550,6 +564,8 @@ function scrapeJobDetailsPage() {
     unansweredInvites,
     proposalRangeText,
     isLoaded,
+    pageAgeMin,
+    stalePage,
     rawText: rawText.substring(0, 8000)
   };
 }

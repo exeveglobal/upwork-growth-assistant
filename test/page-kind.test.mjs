@@ -58,3 +58,20 @@ test('a full job page whose heading has not rendered falls back to the tab title
   const slider = pageAt(`https://www.upwork.com/nx/search/jobs/details/${JOB}`, noHeading, 'Search Freelance Jobs - Upwork');
   assert.equal(slider.readJobTitle({ querySelector: (s) => (s.includes('Description') ? noHeading.Description : null) }), '');
 });
+
+test('"job closed" comes only from an alert that says the job is gone', () => {
+  const p = pageAt(`https://www.upwork.com/nx/proposals/job/${JOB}/apply/`);
+  assert.equal(p.jobClosedIn(['This job is no longer available.']), true);
+  assert.equal(p.jobClosedIn(['This job has been closed by the client']), true);
+  // the real false positive: an unrelated Upwork notice on the apply page
+  assert.equal(p.jobClosedIn(['Specialized Profiles are no longer available. All your portfolio items have been transferred.']), false);
+  assert.equal(p.jobClosedIn(['Your bid is set to 1 Connect.', '']), false);
+  assert.equal(p.jobClosedIn([]), false);
+  assert.equal(p.jobClosedIn([undefined, null]), false);
+});
+
+test('the apply page does not report a closed job from ordinary page text', () => {
+  const text = { innerText: 'Job details\nSpecialized Profiles are no longer available. This job is closed to agencies in Spain.', textContent: '' };
+  const p = pageAt(`https://www.upwork.com/nx/proposals/job/${JOB}/apply/`, { main: text });
+  assert.equal(p.scrapeCurrentPage().jobClosed, false);
+});
