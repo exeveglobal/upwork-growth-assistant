@@ -7,7 +7,7 @@
 
 import { getConnection } from './connection.js';
 import { enqueue } from './outbox.js';
-import { updateLogs, normalizeTitle } from './logs.js';
+import { updateLogs, normalizeTitle, adoptLegacyLogs, visibleLogs } from './logs.js';
 import { toCanonicalStatus, toLocalStatus } from './tracking.js';
 import { recordCheck } from './proposals-check.js';
 
@@ -78,11 +78,15 @@ export function handleProposalsRows(rows, now = Date.now(), page = 'active') {
 }
 
 async function process(rows, now, page) {
-  if (!(await getConnection())) return { matched: 0 }; // Free tier reads nothing
+  const conn = await getConnection();
+  if (!conn) return { matched: 0 }; // Free tier reads nothing
   if (!Array.isArray(rows)) return { matched: 0 };
+  const memberId = conn.member.id;
 
+  await adoptLegacyLogs(memberId);
   const { proposalsSeen: seen = {} } = await chrome.storage.local.get('proposalsSeen');
-  const { logs = [] } = await chrome.storage.local.get('logs');
+  const { logs: all = [] } = await chrome.storage.local.get('logs');
+  const logs = visibleLogs(all, memberId); // only this member's proposals are matched and updated
   const newSeen = { ...seen };
   const localUpdates = {}; // jobId -> new local status
   const matchedJobIds = [];
@@ -120,13 +124,13 @@ async function process(rows, now, page) {
   await chrome.storage.local.set({ proposalsSeen: newSeen });
   if (Object.keys(localUpdates).length) {
     await updateLogs((all) => {
-      for (const l of all) if (localUpdates[l.jobId]) l.status = localUpdates[l.jobId];
+      for (const l of all) if (l.memberId === memberId && localUpdates[l.jobId]) l.status = localUpdates[l.jobId];
       return all;
     });
   }
 
   // The member looked at this list: remember when (and tell the engine), then refresh the reminder
   const { logs: current = [] } = await chrome.storage.local.get('logs');
-  await recordCheck({ page, rowCount: rows.length, matchedJobIds, logs: current, now });
+  await recordCheck({ page, rowCount: rows.length, matchedJobIds, logs: visibleLogs(current, memberId), now });
   return { matched };
 }

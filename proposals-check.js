@@ -6,6 +6,7 @@
 // toolbar icon and a banner in the side panel; its button opens the page on the member's own click.
 
 import { enqueue } from './outbox.js';
+import { visibleLogs } from './logs.js';
 
 export const CHECK_EVERY_MS = 3 * 24 * 60 * 60 * 1000;
 const SETTLE_MS = 24 * 60 * 60 * 1000;     // a proposal sent in the last day may not be in the lists yet
@@ -75,7 +76,9 @@ export async function recordCheck({ page, rowCount, matchedJobIds, logs, now = D
 /** Re-evaluates the reminder and mirrors it to the toolbar badge. Safe to call any time. */
 export async function refreshNudge(logsArg, now = Date.now()) {
   const data = await chrome.storage.local.get(['logs', 'proposalsCheck', 'connection']);
-  const nudge = data.connection ? computeNudge(logsArg ?? data.logs ?? [], data.proposalsCheck || {}, now) : null;
+  // only the connected member's proposals count (the same browser may have been used by someone else before)
+  const mine = data.connection ? (logsArg ?? visibleLogs(data.logs ?? [], data.connection.member.id)) : [];
+  const nudge = data.connection ? computeNudge(mine, data.proposalsCheck || {}, now) : null;
   await chrome.storage.local.set({ nudge });
   try {
     await chrome.action.setBadgeText({ text: nudge ? '!' : '' });

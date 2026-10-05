@@ -1209,3 +1209,4 @@ details.bucket-section:not([open]) .bucket-summary::after {
 .shared-details summary { cursor: pointer; color: var(--text-main); font-weight: 600; }
 .shared-details ul { margin: 8px 0 8px 18px; }
 .shared-details p { line-height: 1.45; }
+.local-only-tag.sync-issue { color: var(--accent-crimson); border-color: rgba(248, 113, 113, 0.45); }

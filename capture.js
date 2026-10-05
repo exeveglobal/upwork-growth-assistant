@@ -9,7 +9,8 @@
 import { enqueue } from './outbox.js';
 import { SCORING_VERSION, logError } from './utils.js';
 import { buildCapturedProposalPayload } from './tracking.js';
-import { upsertCapturedLog } from './logs.js';
+import { adoptLegacyLogs, upsertCapturedLog } from './logs.js';
+import { getConnection } from './connection.js';
 import { logDiag } from './diag.js';
 import { refreshNudge } from './proposals-check.js';
 
@@ -79,7 +80,9 @@ async function recordCapturedProposal(data, at) {
   });
   if (queued) {
     await logDiag('apply.recorded', { total: payload.connectsTotal ?? null, boost: payload.connectsBoost ?? null, scored: !!scored });
-    await upsertCapturedLog(payload); // Free tier records nothing
+    const memberId = (await getConnection())?.member?.id;
+    await adoptLegacyLogs(memberId);
+    await upsertCapturedLog(payload, memberId); // Free tier records nothing
     await refreshNudge();
   }
 }

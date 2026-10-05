@@ -25,12 +25,12 @@ export function connectsLabel(log) {
   return log.connectsBid > 0 && log.connectsJob !== undefined ? `${base} (${log.connectsJob} job + ${log.connectsBid} bid)` : base;
 }
 
-export function upsertCapturedLog(payload) {
+export function upsertCapturedLog(payload, memberId) {
   const connects = payload.connectsTotal ?? 0;
   const boost = payload.boostRank ? `rank${payload.boostRank}` : 'none';
 
   return updateLogs((logs) => {
-    const existing = logs.find(l => l.jobId === payload.jobId);
+    const existing = logs.find(l => l.jobId === payload.jobId && l.memberId === memberId);
     if (existing) {
       const nextBoost = payload.boostRank ? boost : existing.boost;
       const nextConnects = payload.connectsTotal ?? existing.connects;
@@ -63,6 +63,7 @@ export function upsertCapturedLog(payload) {
       jobUrl: payload.jobUrl,
       scoreSnapshot: payload.scoreSnapshot,
       ...splitOf(payload),
+      ...(memberId && { memberId }),
       source: 'capture'
     }, ...logs];
   });
@@ -80,7 +81,7 @@ const TRACKED = ['connects', 'boost', 'status'];
  * Entries without a job id are always separate. Returns { logs, action, log }.
  */
 export function applyManualLog(logs, entry, now = Date.now()) {
-  const existing = entry.jobId ? logs.find(l => l.jobId === entry.jobId) : null;
+  const existing = entry.jobId ? logs.find(l => l.jobId === entry.jobId && l.memberId === entry.memberId) : null;
   if (!existing) return { logs: [entry, ...logs], action: 'created', log: entry };
 
   if (TRACKED.every(k => existing[k] === entry[k])) return { logs, action: 'unchanged', log: existing };
@@ -132,4 +133,35 @@ export function findLoggedByTitle(logs, title) {
   if (!key) return null;
   const matches = logs.filter(l => l.jobId && normalizeTitle(l.title) === key);
   return matches.length === 1 ? matches[0] : null;
+}
+
+// ── whose proposals are these? ───────────────────────────────────────────────
+// The ROI Hub is kept in the browser, but every proposal belongs to ONE Exeve member. If the same Chrome
+// profile is later connected as a different member, the old member's rows must not appear (or sync):
+// their changes would be sent under the wrong key, where the proposal does not exist.
+
+/** The rows of this member. Nothing is shown when not connected. */
+export const visibleLogs = (logs, memberId) => (memberId ? logs.filter(l => l.memberId === memberId) : []);
+
+/** Rows saved before rows carried an owner belong to whoever is connected now (the only member they could have synced as). */
+export async function adoptLegacyLogs(memberId) {
+  if (!memberId) return;
+  await updateLogs((logs) => (logs.some(l => !l.memberId) ? logs.map(l => (l.memberId ? l : { ...l, memberId })) : logs));
+}
+
+/**
+ * Records, on the row, that the engine refused the last change for it (`issue` = its reason), or clears
+ * the mark when a later change was accepted. The ROI Hub shows a "not synced" tag while it is set.
+ */
+export async function markSyncIssue(jobId, memberId, issue) {
+  if (!jobId) return;
+  await updateLogs((logs) => {
+    let changed = false;
+    for (const l of logs) {
+      if (l.jobId !== jobId || (memberId && l.memberId && l.memberId !== memberId)) continue;
+      if (issue && l.syncIssue !== issue) { l.syncIssue = issue; changed = true; }
+      if (!issue && l.syncIssue) { delete l.syncIssue; changed = true; }
+    }
+    return changed ? logs : null;
+  });
 }

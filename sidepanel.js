@@ -16,7 +16,7 @@ import {
   verifyConnection
 } from './connection.js';
 import { enqueue, flush } from './outbox.js';
-import { updateLogs, recordManualLog, roiCounts, connectsLabel, findLoggedByTitle } from './logs.js';
+import { updateLogs, recordManualLog, roiCounts, connectsLabel, findLoggedByTitle, visibleLogs, adoptLegacyLogs } from './logs.js';
 import { scanDisplay, PARTIAL_AFTER_TICKS } from './scan-state.js';
 import { refreshNudge } from './proposals-check.js';
 import { readDiag, formatDiag, clearDiag } from './diag.js';
@@ -35,6 +35,8 @@ let connection = null;     // stored connection (Connected tier) or null (Free t
 let currentRoi = null;     // ROI result for currentScrapedJob
 let pendingLogJob = null;  // job the ROI Hub form is linked to: { jobId, jobUrl, title, scoreSnapshot }
 let proposalLogs = [];
+// The ROI Hub only ever shows (and syncs) the connected member's proposals; see logs.js visibleLogs
+const mine = (all) => visibleLogs(all || [], connection?.member?.id);
 
 // DOM Elements
 const tabButtons = document.querySelectorAll(".tab-btn");
@@ -236,7 +238,7 @@ function setupCheckBanner() {
     if (area !== "local") return;
     if (changes.nudge) render(changes.nudge.newValue || null);
     // Logs or the connection changed (a proposal added, closed by hand, device disconnected)
-    if (changes.logs || changes.connection) refreshNudge().catch(() => {});
+    if (changes.logs || changes.connection || changes.proposalsCheck) refreshNudge().catch(() => {});
   });
   refreshNudge().catch(() => {});
 }
@@ -776,6 +778,13 @@ async function refreshTier() {
   connConnected.classList.toggle("hide", !connected);
   connForm.classList.toggle("hide", connected);
   if (connected) connMemberName.textContent = connection.member.name;
+
+  // Whoever is connected now sees their own proposals (a different member's rows from this browser stay hidden)
+  if (connected) await adoptLegacyLogs(connection.member.id);
+  const { logs: storedLogs = [] } = await chrome.storage.local.get("logs");
+  proposalLogs = mine(storedLogs);
+  renderLogsList();
+  updateROIStats();
   updateLogJobButton();
 
   // Pushes the member back to the connect screen when the engine ended their connection
@@ -944,6 +953,7 @@ function setupROILogger() {
       id: Date.now().toString(),
       date: new Date().toLocaleDateString(),
       submittedAt: new Date().toISOString(),
+      memberId: connection?.member?.id,
       title: logTitleInput.value.trim(),
       connects: parseInt(logConnectsInput.value, 10),
       boost: logBoostSelect.value,
@@ -955,7 +965,7 @@ function setupROILogger() {
     // One entry per job: a hand entry for an already logged job updates it (keeping the earlier
     // values) or, when identical, changes nothing.
     const result = await recordManualLog(newLog);
-    proposalLogs = await updateLogs(logs => logs);
+    proposalLogs = mine(await updateLogs(logs => logs));
     if (result.action === "created") {
       trackProposalSubmitted(newLog);
     } else if (result.action === "overridden") {
@@ -1005,7 +1015,7 @@ function setupROILogger() {
   // Proposals captured from Upwork's apply page are written by the service worker
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.logs) {
-      proposalLogs = changes.logs.newValue || [];
+      proposalLogs = mine(changes.logs.newValue);
       renderLogsList();
       updateROIStats();
       updateLogJobButton();
@@ -1020,7 +1030,8 @@ function setupROILogger() {
 
   btnClearHistory.addEventListener("click", async () => {
     if (confirm("Are you sure you want to delete all proposal tracking logs? This cannot be undone.")) {
-      proposalLogs = await updateLogs(() => []);
+      const me = connection?.member?.id;
+      proposalLogs = mine(await updateLogs(all => all.filter(l => l.memberId !== me)));
       renderLogsList();
       updateROIStats();
     }
@@ -1031,7 +1042,7 @@ function setupROILogger() {
 async function loadProposalLogs() {
   const data = await chrome.storage.local.get(["logs"]);
   if (data.logs) {
-    proposalLogs = data.logs;
+    proposalLogs = mine(data.logs);
   }
   renderLogsList();
   updateROIStats();
@@ -1069,9 +1080,9 @@ function renderLogsList() {
         <div class="history-item-sub">
           <span>${log.date}</span>
           <span class="spent">-${escapeHtml(connectsLabel(log))}${boostLabel}</span>
-          <span>•</span>
           ${statusSelectHtml(log)}
           ${log.revisions?.length ? `<span class="local-only-tag" title="${escapeHtml(revisionSummary(log))}">edited</span>` : ""}
+          ${log.syncIssue ? `<span class="local-only-tag sync-issue" title="${escapeHtml(syncIssueText(log.syncIssue))}">not synced</span>` : ""}
           ${log.jobId ? "" : '<span class="local-only-tag" title="Not linked to a job, so it stays on this device. Use \'Log proposal\' on a scanned job to sync.">local only</span>'}
         </div>
       </div>
@@ -1105,6 +1116,12 @@ function startEditingLog(log) {
   logConnectsInput.focus();
 }
 
+// Why the engine refused the last change for a row, in plain words
+function syncIssueText(issue) {
+  if (issue === "unknown_proposal") return "Exeve could not apply your last change: this proposal is not in the connected account. It was probably logged while connected as someone else.";
+  return `Exeve could not apply your last change (${issue}). Try the change again, or copy your diagnostics for your admin.`;
+}
+
 // Tooltip text: every earlier version of a proposal, oldest first
 function revisionSummary(log) {
   return log.revisions.map(r =>
@@ -1133,13 +1150,13 @@ function statusSelectHtml(log) {
 
 async function setLogStatus(id, status) {
   let changed = null;
-  proposalLogs = await updateLogs(logs => {
+  proposalLogs = mine(await updateLogs(logs => {
     const log = logs.find(l => l.id === id);
     if (!log || log.status === status) return logs;
     log.status = status;
     changed = log;
     return logs;
-  });
+  }));
   if (changed) trackStatusChanged(changed);
 
   renderLogsList();
@@ -1148,7 +1165,7 @@ async function setLogStatus(id, status) {
 }
 
 async function deleteLog(id) {
-  proposalLogs = await updateLogs(logs => logs.filter(l => l.id !== id));
+  proposalLogs = mine(await updateLogs(logs => logs.filter(l => l.id !== id)));
   renderLogsList();
   updateROIStats();
 }

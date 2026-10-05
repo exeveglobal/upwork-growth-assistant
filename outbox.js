@@ -4,6 +4,7 @@
 // side panel and the service worker can't clobber each other) and sent in order, in batches.
 // The engine deduplicates by eventId, so re-sending after a failure is always safe.
 
+import { noteSyncResult } from './sync-issues.js';
 import { getConnection, authFetch, NotConnectedError } from './connection.js';
 import { logError } from './utils.js';
 
@@ -111,11 +112,11 @@ async function doFlush() {
     if (res.status === 200) {
       let results;
       try { ({ results } = await res.json()); } catch { return { sent, stopped: 'retry' }; }
-      results.forEach((r, i) => {
-        if (r.status === 'rejected') {
-          logError('outbox → event rejected', `${all[batch[i]]?.event.type}: ${r.error}`);
-        }
-      });
+      for (const [i, r] of results.entries()) {
+        const rec = all[batch[i]];
+        if (r.status === 'rejected') logError('outbox → event rejected', `${rec?.event.type}: ${r.error}`);
+        if (rec) await noteSyncResult(rec.event, rec.memberId, r);
+      }
       await chrome.storage.local.remove(batch);
       sent += batch.length;
     } else if (res.status === 400 || res.status === 413) {
