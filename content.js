@@ -35,7 +35,24 @@ function findJobTitleEl(root) {
   return findJobDescriptionEl(root) ? root.querySelector("h4") : null;
 }
 
+/**
+ * The job title as text. On a full job page with the description on screen but no heading yet
+ * (still rendering, or a layout we don't know), fall back to the tab title, which Upwork sets to
+ * "<job title> - <category>". The caller still checks it against the URL slug.
+ */
+function readJobTitle(root) {
+  const el = findJobTitleEl(root);
+  const text = el ? el.textContent.trim() : '';
+  if (text) return text;
+  if (/^\/jobs\//.test(location.pathname) && findJobDescriptionEl(root)) {
+    const m = /^(.+?)\s+-\s+[^-]+$/.exec((document.title || '').trim());
+    if (m) return m[1].trim();
+  }
+  return '';
+}
+
 // Tell the service worker about something unreadable, so selectors can be fixed from evidence.
+let unreadableStreak = 0;
 function reportDiag(kind, detail) {
   try { chrome.runtime.sendMessage({ action: 'diag', kind, detail }).catch(() => {}); } catch { /* extension reloaded */ }
 }
@@ -81,10 +98,8 @@ function getPageIdentifier() {
   );
   const root = drawerEl || document.querySelector("main, article") || document.body;
 
-  const jobTitleEl  = findJobTitleEl(root);
   const jobDescEl   = findJobDescriptionEl(root);
-
-  const jobTitle = jobTitleEl ? jobTitleEl.textContent.trim() : "";
+  const jobTitle = readJobTitle(root);
 
   // A job is "open" only when BOTH title AND description are present
   // (title alone can match the feed's own headings)
@@ -96,15 +111,51 @@ function getPageIdentifier() {
   return `nonjob:${url}`;
 }
 
+const JOB_ID_IN_URL = /~[0-9A-Za-z]{10,40}/;
+const APPLY_PATH_RE = /^\/nx\/proposals\/job\/(~[0-9A-Za-z]{10,40})\/apply/;
+
+/**
+ * What kind of Upwork page this is, so the side panel only scores real job views and says
+ * something sensible everywhere else (reports, messages, contracts, ...).
+ *   job      a job slider or full job page          -> scored
+ *   apply    the "Submit a proposal" page           -> shows the score saved for that job
+ *   proposals / profile / feed / other              -> informational only
+ */
+function classifyPage() {
+  const path = location.pathname;
+  if (document.querySelector("[data-test='identity-name'], [data-test='profile-title']")
+      || /\/freelancers\/|\/nx\/find-work\/profile/.test(location.href)) return 'profile';
+  if (APPLY_PATH_RE.test(path)) return 'apply';
+  if (/^\/nx\/proposals/.test(path)) return 'proposals';
+
+  const drawer = document.querySelector("[role='dialog'], .up-slider, .job-details-panel, .slider-panel, [role='region'] .slider");
+  const root = drawer || document.querySelector("main, article") || document.body;
+  if (JOB_ID_IN_URL.test(location.href) && (drawer || /\/jobs\/|\/details\//.test(path))) return 'job';
+  if (findJobDescriptionEl(root) && findJobTitleEl(root)) return 'job';
+
+  if (/^\/nx\/find-work|^\/nx\/search|^\/jobs\/search|^\/ab\/jobs/.test(path)) return 'feed';
+  return 'other';
+}
+
+/**
+ * What the apply page shows about the job itself (it has no client or competition stats): the
+ * Connects it costs right now, and whether it says the job is gone. Used to refresh a saved score.
+ */
+function readApplyState() {
+  const text = (document.querySelector('main') || document.body).innerText || '';
+  const m = /This proposal requires\s+([\d,]+)\s+Connects?/i.exec(text);
+  return {
+    connectsRequired: m ? parseInt(m[1].replace(/,/g, ''), 10) : null,
+    jobClosed: /no longer (available|accepting)|job (is|has been) (closed|removed|filled)/i.test(text)
+  };
+}
+
 function scrapeCurrentPage() {
-  const url = window.location.href;
-  
-  if (url.includes("/freelancers/") || url.includes("/nx/find-work/profile") || document.querySelector("[data-test='identity-name'], [data-test='profile-title']")) {
-    return scrapeProfilePage();
-  } else {
-    // Default to scraping job details (since it could be a job feed, job details page, or slider)
-    return scrapeJobDetailsPage();
-  }
+  const kind = classifyPage();
+  if (kind === 'profile') return scrapeProfilePage();
+  if (kind === 'job') return scrapeJobDetailsPage();
+  const apply = APPLY_PATH_RE.exec(location.pathname);
+  return { type: 'page', kind, jobId: apply ? apply[1] : null, ...(apply && readApplyState()) };
 }
 
 // Scrape profile details
@@ -178,8 +229,7 @@ function scrapeJobDetailsPage() {
   const root = drawer || document.querySelector("main, article") || document.body;
 
   // 1. Job Title
-  const titleEl = findJobTitleEl(root);
-  const title = titleEl ? titleEl.textContent.trim() : "";
+  const title = readJobTitle(root);
 
   // 2. Job Description
   const descEl = findJobDescriptionEl(root);
@@ -436,12 +486,20 @@ function scrapeJobDetailsPage() {
     }
   }
 
-  // A job view whose title/description could not be read: record which part, once per hour
-  if ((drawer || /\/jobs\/|\/details\//.test(url)) && (!title || description.length < 50)) {
-    reportDiag('scrape.job_unreadable', {
-      missing: [!title && 'title', description.length < 50 && 'description'].filter(Boolean),
-      view: drawer ? 'slider' : 'page'
-    });
+  // A job view whose title/description stays unreadable: record which part, once per hour. Pages
+  // render in stages, so only a second unreadable read in a row counts (a single one is just loading).
+  if (drawer || /\/jobs\/|\/details\//.test(url)) {
+    if (!title || description.length < 50) {
+      unreadableStreak++;
+      if (unreadableStreak >= 2) {
+        reportDiag('scrape.job_unreadable', {
+          missing: [!title && 'title', description.length < 50 && 'description'].filter(Boolean),
+          view: drawer ? 'slider' : 'page'
+        });
+      }
+    } else {
+      unreadableStreak = 0;
+    }
   }
 
   // Client name from review text (heuristic)
@@ -579,11 +637,13 @@ function cleanText(text) {
     try {
       if (document.visibilityState !== 'visible') return;
       const path = location.pathname;
-      if (!JOB_VIEW.test(path) || NOT_JOB_VIEW.test(path)) return;
+      if (!JOB_VIEW.test(path) || NOT_JOB_VIEW.test(path)) { last = ''; return; } // closed: a re-open counts as a new sighting
       const job = scrapeJobDetailsPage();
       if (job.type !== 'job' || !job.isLoaded || !job.jobId) return;
 
-      const sig = [job.jobId, job.title, job.proposalRangeText, job.interviewingCount, job.invitesSent, job.connectsNeeded].join('|');
+      // Anything the score depends on: when it changes, the job is recorded again with a fresh score
+      const sig = [job.jobId, job.title, job.proposalRangeText, job.interviewingCount, job.invitesSent, job.unansweredInvites,
+        job.hiresCount, job.clientLastViewedHours, job.connectsNeeded, job.isPaymentVerified].join('|');
       if (sig === last) return;
       last = sig;
       chrome.runtime.sendMessage({ action: 'jobScraped', job: { ...job, rawText: undefined } }).catch(() => {});

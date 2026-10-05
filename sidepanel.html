@@ -4,19 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Upwork Growth Assistant</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="brand/favicon-32.png">
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
   <!-- Header -->
   <header>
     <div class="brand">
-      <div class="logo-circle">⚡</div>
+      <img class="brand-logo" src="brand/logo-light.png" alt="EXEVE">
       <div class="brand-text">
-        <h1>Upwork Growth</h1>
-        <span class="sub">Growth & Connects ROI Assistant</span>
+        <h1>Upwork Growth Assistant</h1>
+        <span class="sub">EXEVE Growth Engine</span>
       </div>
     </div>
     <div id="tier-badge" class="badge free-tier" title="Free mode: job scoring only">Free</div>
@@ -73,6 +71,7 @@
           <span id="scraped-job-country" class="meta-tag country hide"></span>
           <span id="scraped-job-connects" class="meta-tag connects">16 Connects</span>
         </div>
+        <div id="applied-note" class="applied-note hide" role="status"></div>
         <button id="btn-log-job" class="btn btn-secondary btn-full log-job-btn hide">Log proposal for this job</button>
       </div>
 
@@ -106,9 +105,9 @@
 
       <!-- Fallback when no job page open -->
       <div id="analyzer-fallback" class="fallback-panel">
-        <div class="fallback-icon">🔍</div>
-        <h3>No Job Post Detected</h3>
-        <p>Open an Upwork job description page or click on a job card in the feed, then press reload.</p>
+        <div id="fallback-icon" class="fallback-icon">🔍</div>
+        <h3 id="fallback-title">No Job Post Detected</h3>
+        <p id="fallback-text">Open an Upwork job description page or click on a job card in the feed, then press reload.</p>
         <button id="btn-reload-job" class="btn btn-secondary">Scan Page</button>
       </div>
     </section>

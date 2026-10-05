@@ -25,6 +25,7 @@ export function boostRankNumber(boost) {
   return m ? Number(m[1]) : undefined;
 }
 
+const round2 = (n) => Math.round(n * 100) / 100;
 const orNull = (v) => (v === undefined || v === '' || Number.isNaN(v) ? null : v);
 const cleanText = (v, bad = []) => (typeof v === 'string' && v && !bad.includes(v) ? v : null);
 
@@ -54,6 +55,37 @@ export function buildScoreInputs(job) {
   };
 }
 
+/** Inverse of buildScoreInputs: the flat job shape the scorer reads, rebuilt from a saved snapshot. */
+export function jobFromInputs(inputs) {
+  const c = inputs.client || {};
+  return {
+    isHourly: inputs.isHourly, budget: inputs.budget, jobAgeHours: inputs.jobAgeHours,
+    connectsNeeded: inputs.connectsNeeded, proposalRangeText: inputs.proposalRangeText,
+    interviewingCount: inputs.interviewingCount, invitesSent: inputs.invitesSent,
+    unansweredInvites: inputs.unansweredInvites, hiresCount: inputs.hiresCount,
+    clientLastViewedHours: inputs.clientLastViewedHours,
+    clientCountry: c.country ?? 'Unknown', isPaymentVerified: c.isPaymentVerified, rating: c.rating,
+    reviewsCount: c.reviewsCount, hireRate: c.hireRate, totalSpend: c.totalSpend,
+    activeJobsCount: c.activeJobsCount, avgRatePaid: c.avgRatePaid ?? 'N/A'
+  };
+}
+
+/**
+ * The saved job as it is likely to look `elapsedMs` later: it is that much older, and the client
+ * last looked that much longer ago. Everything else is what was last seen (the apply page cannot
+ * show it again), and `connectsNow` replaces the Connects cost when the apply page shows it.
+ */
+export function ageJob(job, elapsedMs, connectsNow) {
+  const hours = Math.max(0, elapsedMs) / 3_600_000;
+  const add = (v) => (typeof v === 'number' ? round2(v + hours) : v);
+  return {
+    ...job,
+    jobAgeHours: add(job.jobAgeHours),
+    clientLastViewedHours: add(job.clientLastViewedHours),
+    connectsNeeded: connectsNow ?? job.connectsNeeded
+  };
+}
+
 export function buildScore(roi) {
   return {
     total: roi.score,
@@ -71,6 +103,21 @@ export function buildScoreSnapshot(job, roi) {
   return { inputs: buildScoreInputs(job), score: buildScore(roi) };
 }
 
+/**
+ * What the side panel shows for a job, kept next to the snapshot so the SAME score can be shown
+ * later from another tab (e.g. the apply page, which has no job details to score from).
+ */
+export function buildScoreView(job, roi) {
+  return {
+    title: (job.title || '').slice(0, TITLE_MAX),
+    connectsNeeded: orNull(job.connectsNeeded),
+    clientCountry: cleanText(job.clientCountry, ['Unknown']),
+    clientName: cleanText(job.clientName),
+    hiresCount: orNull(job.hiresCount),
+    roi: { score: roi.score, label: roi.label, color: roi.color, reasons: roi.reasons }
+  };
+}
+
 export function buildJobScoredPayload(job, roi) {
   return {
     jobId: job.jobId,
@@ -84,7 +131,7 @@ export function buildJobScoredPayload(job, roi) {
 
 /** Changes whenever something worth re-recording changes. */
 export function scoreSignature(job, roi) {
-  return [roi.score, job.proposalRangeText, job.interviewingCount, job.connectsNeeded, job.invitesSent].join('|');
+  return [roi.score, job.proposalRangeText, job.interviewingCount, job.connectsNeeded, job.invitesSent, job.hiresCount].join('|');
 }
 
 const RESCORE_AFTER_MS = 30 * 60 * 1000;
@@ -96,7 +143,6 @@ export function shouldEmitJobScored(prev, now, signature) {
   return now - prev.at >= RESCORE_AFTER_MS;
 }
 
-const round2 = (n) => Math.round(n * 100) / 100;
 const stripEmpty = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && !Number.isNaN(v)));
 
 /**

@@ -1,25 +1,35 @@
-/* sidepanel.css - Premium Styles for Upwork Growth Assistant */
+/* sidepanel.css - Upwork Growth Assistant, in the EXEVE brand (dark theme).
+   Tokens follow exeve.global / the EGE dashboard (growth-engine/docs/BRANDING.md). Fonts are bundled
+   (fonts/), so the panel loads nothing from third parties and works offline. */
+
+@font-face { font-family: 'Plus Jakarta Sans'; font-weight: 200 800; font-display: swap; src: url('fonts/plus-jakarta-sans-latin-wght-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Space Grotesk'; font-weight: 300 700; font-display: swap; src: url('fonts/space-grotesk-latin-wght-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 400; font-display: swap; src: url('fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 500; font-display: swap; src: url('fonts/jetbrains-mono-latin-500-normal.woff2') format('woff2'); }
 
 :root {
-  --bg-dark: #090d16;
-  --bg-panel: #0e1629;
-  --card-bg: rgba(22, 32, 59, 0.55);
-  --card-border: rgba(255, 255, 255, 0.06);
+  --bg-dark: #08090d;
+  --bg-panel: #11141c;
+  --card-bg: #191d28;
+  --card-border: rgba(255, 255, 255, 0.12);
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
-  --primary: #8b5cf6;
-  --primary-glow: rgba(139, 92, 246, 0.25);
-  --primary-hover: #a78bfa;
+  --primary: #fe4c1c;
+  --primary-glow: rgba(254, 76, 28, 0.28);
+  --primary-hover: #d93c0e;
+  --primary-text: #ff7a52;
   --accent-green: #10b981;
   --accent-amber: #f59e0b;
-  --accent-crimson: #f43f5e;
-  
-  --font-heading: 'Outfit', sans-serif;
-  --font-body: 'Inter', sans-serif;
-  
-  --border-radius-lg: 16px;
+  --accent-crimson: #f87171;
+
+  --font-heading: 'Space Grotesk', 'Plus Jakarta Sans', sans-serif;
+  --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --border-radius-lg: 18px;
   --border-radius-md: 12px;
   --border-radius-sm: 8px;
+  --pill: 999px;
   --transition-fast: all 0.2s ease;
   --transition-medium: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -51,7 +61,7 @@ body {
   background: var(--bg-dark);
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #2a3040;
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -75,34 +85,29 @@ header {
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
+.brand-text { padding-left: 12px; border-left: 1px solid var(--card-border); }
 
-.logo-circle {
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, var(--primary) 0%, #6366f1 100%);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  font-weight: bold;
-  box-shadow: 0 0 10px var(--primary-glow);
+.brand-logo {
+  height: 22px;
+  width: auto;
+  display: block;
 }
 
 .brand-text h1 {
   font-family: var(--font-heading);
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  background: linear-gradient(to right, #f8fafc, #c084fc);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-main);
 }
 
 .brand-text .sub {
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--text-muted);
   display: block;
 }
@@ -168,7 +173,7 @@ header {
 
 .tab-btn.active {
   color: var(--primary-hover);
-  background-color: rgba(139, 92, 246, 0.08);
+  background-color: rgba(254, 76, 28, 0.08);
 }
 
 .tab-btn.active svg {
@@ -181,7 +186,7 @@ header {
   padding: 16px;
   flex: 1;
   overflow-y: auto;
-  background: radial-gradient(circle at top right, rgba(139, 92, 246, 0.05), transparent 60%);
+  background: radial-gradient(circle at top right, rgba(254, 76, 28, 0.05), transparent 60%);
 }
 
 .tab-panel {
@@ -193,6 +198,13 @@ header {
 
 .tab-panel.active {
   display: flex;
+}
+
+/* ROI Hub content wrapper (hidden while locked): keeps the same rhythm as the tab panel itself */
+#roi-content:not(.hide) {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 /* Cards */
@@ -240,7 +252,7 @@ label {
 
 .form-input, .form-textarea {
   width: 100%;
-  background-color: rgba(9, 13, 22, 0.8);
+  background-color: rgba(8, 9, 13, 0.8);
   border: 1px solid var(--card-border);
   border-radius: var(--border-radius-sm);
   color: var(--text-main);
@@ -274,7 +286,7 @@ label {
   font-size: 13px;
   font-weight: 600;
   padding: 10px 18px;
-  border-radius: var(--border-radius-md);
+  border-radius: var(--pill);
   border: none;
   cursor: pointer;
   display: inline-flex;
@@ -286,14 +298,14 @@ label {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--primary) 0%, #6366f1 100%);
+  background: var(--primary);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 4px 12px rgba(254, 76, 28, 0.3);
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.45);
+  box-shadow: 0 6px 16px rgba(254, 76, 28, 0.45);
 }
 
 .btn-primary:active {
@@ -453,9 +465,9 @@ label {
 }
 
 .meta-tag.connects {
-  color: #a78bfa;
-  background-color: rgba(139, 92, 246, 0.08);
-  border-color: rgba(139, 92, 246, 0.15);
+  color: var(--primary-text);
+  background-color: rgba(254, 76, 28, 0.08);
+  border-color: rgba(254, 76, 28, 0.15);
 }
 
 .meta-tag.client {
@@ -522,7 +534,7 @@ label {
 }
 
 .score-reasons {
-  background-color: rgba(9, 13, 22, 0.4);
+  background-color: rgba(8, 9, 13, 0.4);
   border-radius: var(--border-radius-md);
   padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.03);
@@ -601,7 +613,7 @@ details.bucket-section:not([open]) .bucket-summary::after {
 .bucket-label {
   font-size: 11px;
   font-weight: 600;
-  color: #a78bfa;
+  color: var(--primary-text);
   letter-spacing: 0.04em;
   flex: 1;
 }
@@ -706,7 +718,7 @@ details.bucket-section:not([open]) .bucket-summary::after {
 .proposal-output-area {
   max-height: 280px;
   overflow-y: auto;
-  background-color: rgba(9, 13, 22, 0.5);
+  background-color: rgba(8, 9, 13, 0.5);
   border-radius: var(--border-radius-sm);
   padding: 12px;
   border: 1px solid var(--card-border);
@@ -726,7 +738,7 @@ details.bucket-section:not([open]) .bucket-summary::after {
   margin-top: 14px;
   margin-bottom: 6px;
   color: var(--primary-hover);
-  border-bottom: 1px solid rgba(139, 92, 246, 0.15);
+  border-bottom: 1px solid rgba(254, 76, 28, 0.15);
   padding-bottom: 2px;
 }
 
@@ -819,7 +831,7 @@ details.bucket-section:not([open]) .bucket-summary::after {
 }
 
 .history-item {
-  background-color: rgba(9, 13, 22, 0.4);
+  background-color: rgba(8, 9, 13, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.03);
   border-radius: var(--border-radius-sm);
   padding: 10px 12px;
@@ -831,8 +843,8 @@ details.bucket-section:not([open]) .bucket-summary::after {
 }
 
 .history-item:hover {
-  background-color: rgba(9, 13, 22, 0.6);
-  border-color: rgba(139, 92, 246, 0.1);
+  background-color: rgba(8, 9, 13, 0.6);
+  border-color: rgba(254, 76, 28, 0.1);
 }
 
 .history-item-details {
@@ -858,7 +870,7 @@ details.bucket-section:not([open]) .bucket-summary::after {
 }
 
 .history-item-sub .spent {
-  color: #c084fc;
+  color: var(--primary-text);
 }
 
 .history-item-sub .status-badge {
@@ -939,7 +951,7 @@ details.bucket-section:not([open]) .bucket-summary::after {
 
 @keyframes shine {
   0%, 100% { filter: brightness(1); }
-  50% { filter: brightness(1.2) drop-shadow(0 0 4px rgba(139, 92, 246, 0.4)); }
+  50% { filter: brightness(1.2) drop-shadow(0 0 4px rgba(254, 76, 28, 0.4)); }
 }
 
 /* Error Log */
@@ -1023,8 +1035,8 @@ details.bucket-section:not([open]) .bucket-summary::after {
   padding: 1px 6px;
   border-radius: 10px;
   color: var(--primary-hover);
-  background-color: rgba(139, 92, 246, 0.15);
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  background-color: rgba(254, 76, 28, 0.15);
+  border: 1px solid rgba(254, 76, 28, 0.3);
   vertical-align: middle;
 }
 
@@ -1067,8 +1079,8 @@ details.bucket-section:not([open]) .bucket-summary::after {
 .consent-box {
   font-size: 12px;
   color: var(--text-muted);
-  background-color: rgba(139, 92, 246, 0.06);
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  background-color: rgba(254, 76, 28, 0.06);
+  border: 1px solid rgba(254, 76, 28, 0.2);
   border-radius: var(--border-radius-sm);
   padding: 10px 12px;
   margin-bottom: 10px;
@@ -1121,3 +1133,16 @@ details.bucket-section:not([open]) .bucket-summary::after {
   cursor: help;
 }
 
+
+/* Reminder on a job you already applied to */
+.applied-note {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: var(--border-radius-sm);
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: var(--accent-green);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.applied-note small { display: block; color: var(--text-muted); margin-top: 2px; }

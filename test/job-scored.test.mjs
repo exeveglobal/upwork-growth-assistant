@@ -28,16 +28,29 @@ test('a loaded job is scored, snapshotted and queued as job.scored', async () =>
   const [ev] = sent();
   assert.equal(ev.type, 'job.scored');
   assert.equal(ev.payload.jobId, ID);
+  const view = env.store.scoredIndex[ID].view;
+  assert.equal(view.title, 'Elementor Specialist');
+  assert.equal(view.roi.score, roi.score);
+  assert.ok(Array.isArray(view.roi.reasons) && view.roi.reasons.length > 0);
   const snap = env.store.scoredIndex[ID].snapshot;
   assert.equal(snap.inputs.isHourly, true);
   assert.equal(snap.inputs.connectsNeeded, 14);
   assert.equal(snap.score.total, roi.score);
 });
 
-test('free tier, unloaded and id-less jobs record nothing', async () => {
+test('free tier keeps the score on the device but queues nothing; connecting later sends it', async () => {
   delete env.store.connection;
-  assert.equal(await handleJobScraped(job()), null);
+  const roi = await handleJobScraped(job());
+  assert.ok(roi);
+  assert.equal(env.store.scoredIndex[ID].view.roi.score, roi.score);
+  assert.equal(env.queued().length, 0);
   env.connect('m1', 'tok');
+  await handleJobScraped(job());
+  await flush();
+  assert.equal(sent().filter(e => e.type === 'job.scored').length, 1, 'first connected sighting is sent');
+});
+
+test('unloaded and id-less jobs record nothing', async () => {
   assert.equal(await handleJobScraped(job({ isLoaded: false })), null);
   assert.equal(await handleJobScraped(job({ jobId: null })), null);
   assert.equal(env.store.scoredIndex, undefined);
@@ -119,4 +132,25 @@ test('diagnostics dedupe repeats within an hour and stay capped', async () => {
   for (let i = 0; i < 230; i++) await logDiag('y', { i }, t);
   d = await readDiag();
   assert.equal(d.length, 200);
+});
+
+test('seeing a job again refreshes its stored score and time, without re-sending an unchanged job', async () => {
+  const t0 = 1_000_000;
+  await handleJobScraped(job(), t0);
+  await handleJobScraped(job(), t0 + 5 * 60_000);
+  await flush();
+  assert.equal(sent().length, 1, 'unchanged job is not re-sent');
+  assert.equal(env.store.scoredIndex[ID].seenAt, t0 + 5 * 60_000, 'but the sighting time moves on');
+
+  // the job filled up in the meantime: stored score and view follow, and the change is sent
+  const before = env.store.scoredIndex[ID].view.roi.score;
+  await handleJobScraped(job({ hiresCount: 1, interviewingCount: 4, proposalRangeText: '50+' }), t0 + 60 * 60_000);
+  await flush();
+  const entry = env.store.scoredIndex[ID];
+  assert.equal(entry.view.hiresCount, 1);
+  assert.equal(entry.snapshot.inputs.hiresCount, 1);
+  assert.equal(entry.seenAt, t0 + 60 * 60_000);
+  assert.equal(sent().length, 2, 'a changed job is sent again');
+  assert.notEqual(entry.view.roi.score, undefined);
+  assert.ok(typeof before === 'number');
 });

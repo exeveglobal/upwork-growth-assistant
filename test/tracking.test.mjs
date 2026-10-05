@@ -90,3 +90,32 @@ test('calculateROIScore exposes structured parts without changing the score', ()
   assert.equal(roi.paymentMultiplier, 1.1);
   assert.equal(roi.connectsModifier, 3);
 });
+
+test('a score rebuilt from its snapshot is identical to the original', async () => {
+  const { buildScoreInputs, jobFromInputs } = await import('../tracking.js');
+  const { calculateROIScore } = await import('../utils.js');
+  const job = {
+    isHourly: true, budget: '$20 – $40/hr', jobAgeHours: 2, connectsNeeded: 14, proposalRangeText: '10 to 15',
+    interviewingCount: 1, invitesSent: 0, unansweredInvites: 0, hiresCount: null, clientLastViewedHours: 0.5,
+    clientCountry: 'Colombia', isPaymentVerified: true, rating: 4.9, reviewsCount: 40, hireRate: 80, totalSpend: '66K',
+    activeJobsCount: 1, avgRatePaid: '$22/hr'
+  };
+  const original = calculateROIScore(job);
+  const rebuilt = calculateROIScore(jobFromInputs(buildScoreInputs(job)));
+  assert.equal(rebuilt.score, original.score);
+  assert.deepEqual(rebuilt.reasons, original.reasons);
+  // missing client data survives the round trip too
+  const sparse = { ...job, clientCountry: 'Unknown', avgRatePaid: 'N/A', rating: null, hireRate: null, totalSpend: null };
+  assert.equal(calculateROIScore(jobFromInputs(buildScoreInputs(sparse))).score, calculateROIScore(sparse).score);
+});
+
+test('ageJob moves time forward and swaps in the Connects cost the apply page shows', async () => {
+  const { ageJob } = await import('../tracking.js');
+  const aged = ageJob({ jobAgeHours: 1, clientLastViewedHours: 0.1, connectsNeeded: 14, hireRate: 80, interviewingCount: null }, 3 * 3_600_000, 16);
+  assert.equal(aged.jobAgeHours, 4);
+  assert.equal(aged.clientLastViewedHours, 3.1);
+  assert.equal(aged.connectsNeeded, 16);
+  assert.equal(aged.hireRate, 80);
+  assert.equal(ageJob({ jobAgeHours: null, clientLastViewedHours: null, connectsNeeded: 14 }, 1000).jobAgeHours, null, 'unknown stays unknown');
+  assert.equal(ageJob({ jobAgeHours: 1, connectsNeeded: 14 }, 1000).connectsNeeded, 14, 'no live value keeps the saved one');
+});

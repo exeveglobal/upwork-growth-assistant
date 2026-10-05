@@ -16,10 +16,13 @@ import {
   verifyConnection
 } from './connection.js';
 import { enqueue, flush } from './outbox.js';
-import { updateLogs } from './logs.js';
+import { updateLogs, recordManualLog } from './logs.js';
+import { scanDisplay, PARTIAL_AFTER_TICKS } from './scan-state.js';
 import { readDiag, formatDiag, clearDiag } from './diag.js';
 import {
   buildScoreSnapshot,
+  jobFromInputs,
+  ageJob,
   toCanonicalStatus,
   boostRankNumber
 } from './tracking.js';
@@ -106,6 +109,11 @@ const CONNECTION_RECHECK_MS = 5 * 60 * 1000;
 let lastPageIdentifier = "";
 let scanInProgress = false;
 
+// A job view can be on screen long before Upwork has finished rendering it. Until it is complete we
+// show "loading" (never a score built from half the data) and keep re-reading it.
+let awaitingLoad = false;
+let awaitingTicks = 0;
+
 // Initialize Extension Sidepanel
 document.addEventListener("DOMContentLoaded", async () => {
   await loadSettings();
@@ -129,6 +137,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Setup periodic SPA scanner (every 1.5s) to detect drawer openings or navigation changes
   setInterval(async () => {
     try {
+      if (awaitingLoad && !scanInProgress) {
+        awaitingTicks++;
+        // every tick for the first ~15 s, then only now and then (e.g. a page that never shows Connects)
+        if (awaitingTicks <= PARTIAL_AFTER_TICKS || awaitingTicks % 7 === 0) scanActivePage();
+      }
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab && tab.url && tab.url.includes("upwork.com")) {
         chrome.tabs.sendMessage(tab.id, { action: "checkPageIdentifier" }, (response) => {
@@ -184,6 +197,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 // showFallbackUI() is called later only if the scan returns no job data.
 function clearCachedUI() {
   scanInProgress = false;
+  awaitingLoad = false;
+  awaitingTicks = 0;
+  stopApplyWatch();
 
   // Show scanning state in job header card
   jobDetailsCard.classList.remove("hide");
@@ -263,7 +279,7 @@ function sendMessageToContentScript(tabId, message, retryCount = 0) {
           chrome.tabs.sendMessage(tabId, message, (retryRes) => {
             scanInProgress = false;
             if (retryRes && retryRes.success) {
-              handleScrapeResult(retryRes.data);
+              handleScanData(retryRes.data);
             } else {
               console.error("Failed to scrape after programmatic injection.");
             }
@@ -283,12 +299,17 @@ function sendMessageToContentScript(tabId, message, retryCount = 0) {
         showFallbackUI();
         return;
       }
-      if (!response.data.isLoaded && retryCount < 3) {
-        setTimeout(() => sendMessageToContentScript(tabId, message, retryCount + 1), 700);
+      if (response.data.type === 'job' && !response.data.isLoaded) {
+        if (retryCount < 3) {
+          setTimeout(() => sendMessageToContentScript(tabId, message, retryCount + 1), 700);
+          return;
+        }
+        scanInProgress = false;
+        handleScanData(response.data);
         return;
       }
       scanInProgress = false;
-      handleScrapeResult(response.data);
+      handleScanData(response.data);
     } else {
       scanInProgress = false;
       showFallbackUI();
@@ -297,6 +318,44 @@ function sendMessageToContentScript(tabId, message, retryCount = 0) {
       logError('sidepanel → sendMessageToContentScript', errMsg, '');
     }
   });
+}
+
+// Decides what a scan result may show. A job that is not completely rendered never gets a score
+// built from half the data: it shows "loading", the poll keeps re-reading it, and only after
+// PARTIAL_AFTER_TICKS does it show what there is, clearly marked as incomplete.
+function handleScanData(data) {
+  const display = scanDisplay(data, awaitingTicks);
+  if (display === "show") {
+    awaitingLoad = false;
+    awaitingTicks = 0;
+    handleScrapeResult(data);
+    return;
+  }
+  awaitingLoad = true;
+  if (display === "partial") {
+    handleScrapeResult(data);
+    jobPageStatus.className = "status-alert info";
+    jobPageStatus.querySelector(".status-text").textContent =
+      "Some details weren't found on this page, so this score may be incomplete.";
+  } else {
+    showJobLoading(data);
+  }
+}
+
+// The job is on screen but Upwork has not finished rendering it: say so, show no score
+function showJobLoading(data) {
+  currentScrapedJob = null;
+  currentRoi = null;
+  updateLogJobButton();
+  jobDetailsCard.classList.remove("hide");
+  analyzerFallback.classList.add("hide");
+  roiScoreCard.classList.add("hide");
+  aiComingSoonCard.classList.add("hide");
+  scrapedJobTitle.textContent = data.title || "Loading job...";
+  scrapedJobConnects.textContent = "...";
+  scrapedJobCountry.classList.add("hide");
+  jobPageStatus.className = "status-alert info";
+  jobPageStatus.querySelector(".status-text").textContent = "Waiting for Upwork to finish loading this job...";
 }
 
 // Script Injector Utility
@@ -382,89 +441,204 @@ function handleScrapeResult(data) {
     currentRoi = roi;
     updateLogJobButton();
     trackJobScored(data);
-    updateROIRadial(roi.score, roi.color);
-    roiLabel.textContent = roi.label;
-    roiLabel.style.backgroundColor = roi.color;
-
-    // Render interactive bucket breakdown
-    let currentUl = null;
-
-    roi.reasons.forEach(reason => {
-      if (reason.startsWith("──")) {
-        const m = reason.match(/── (.+?):\s*(\d+)\/100/);
-        const label = m ? m[1] : reason.replace(/──\s*/, "");
-        const score = m ? parseInt(m[2]) : null;
-
-        const details = document.createElement("details");
-        details.open = true;
-        details.classList.add("bucket-section");
-
-        const summary = document.createElement("summary");
-        summary.classList.add("bucket-summary");
-
-        const labelSpan = document.createElement("span");
-        labelSpan.classList.add("bucket-label");
-        labelSpan.textContent = label;
-        summary.appendChild(labelSpan);
-
-        if (score !== null) {
-          const sw = document.createElement("span");
-          sw.classList.add("bucket-score-wrap");
-          const bar = document.createElement("div");
-          bar.classList.add("bucket-score-bar");
-          const fill = document.createElement("div");
-          fill.classList.add("bucket-score-fill");
-          fill.style.width = score + "%";
-          fill.style.backgroundColor = score >= 70 ? "#10b981" : score >= 45 ? "#eab308" : "#ef4444";
-          bar.appendChild(fill);
-          sw.appendChild(bar);
-          const num = document.createElement("span");
-          num.classList.add("bucket-score-num");
-          num.textContent = score;
-          sw.appendChild(num);
-          summary.appendChild(sw);
-        }
-
-        details.appendChild(summary);
-        const ul = document.createElement("ul");
-        ul.classList.add("bucket-items");
-        details.appendChild(ul);
-
-        roiReasonsList.appendChild(details);
-        currentUl = ul;
-
-      } else {
-        if (currentUl) {
-          const li = document.createElement("li");
-          li.textContent = reason;
-          if (reason.startsWith("+"))      li.classList.add("reason-positive");
-          else if (reason.startsWith("-")) li.classList.add("reason-negative");
-          else                             li.classList.add("reason-neutral");
-          currentUl.appendChild(li);
-        } else {
-          const row = document.createElement("div");
-          row.classList.add("reason-row");
-          row.textContent = reason;
-          if (reason.startsWith("+"))      row.classList.add("reason-positive");
-          else if (reason.startsWith("-")) row.classList.add("reason-negative");
-          else                             row.classList.add("reason-neutral");
-          roiReasonsList.appendChild(row);
-        }
-      }
-    });
-
-    roiScoreCard.classList.remove("hide");
+    renderRoiBreakdown(roi);
   }
-  // Profile pages are ignored for now: the Profile Optimizer is coming soon.
+  else if (data.type === "page") {
+    showPageInfo(data);
+  } else if (data.type === "profile") {
+    showPageInfo({ kind: "profile" });
+  }
+}
+
+// What each non-job Upwork page gets, instead of a placeholder score.
+const PAGE_MESSAGES = {
+  feed: { icon: "🔍", title: "Pick a job to score", text: "Click a job card in the feed or search results and its score appears here.", status: "Browsing jobs" },
+  proposals: { icon: "📋", title: "Your proposals", text: "Proposal statuses are read from this page to keep your tracking up to date. Nothing else to do here.", status: "Proposals page" },
+  profile: { icon: "👤", title: "Profile page", text: "The profile optimizer is coming soon.", status: "Profile page" },
+  other: { icon: "🧭", title: "Nothing to score here", text: "Scores appear on job pages. Open a job from the feed or search results.", status: "Not a job page" },
+  apply: { icon: "✍️", title: "This job wasn't scored", text: "Open the job from the feed or its job page once and the score will be kept for this proposal.", status: "Submitting a proposal" }
+};
+
+function showPageInfo(data) {
+  awaitingLoad = false;
+  awaitingTicks = 0;
+  // The apply page shows the saved score for its job; only without one does it fall back to a message
+  if (data.kind === "apply" && data.jobId) {
+    showSavedScore(data.jobId, data).then(shown => { if (!shown) showPageMessage(data); });
+    return;
+  }
+  showPageMessage(data);
+}
+
+function showPageMessage(data) {
+  const m = PAGE_MESSAGES[data.kind] || PAGE_MESSAGES.other;
+  showFallbackUI(); // also stops the apply-page refresh
+  jobPageStatus.querySelector(".status-text").textContent = m.status;
+  document.getElementById("fallback-icon").textContent = m.icon;
+  document.getElementById("fallback-title").textContent = m.title;
+  document.getElementById("fallback-text").textContent = m.text;
+  btnReloadJob.classList.toggle("hide", data.kind !== "feed");
+}
+
+// The apply page has no job details to score from, so show the score saved when the job was viewed.
+// It cannot see client or competition stats, and the extension never fetches Upwork pages on the
+// member's behalf, so after STALE_AFTER_MS the score is recalculated from what can still be known:
+// the job is older, the client last looked longer ago, and the Connects cost the page shows now.
+const STALE_AFTER_MS = 3 * 60 * 1000;
+const APPLY_REFRESH_MS = 20 * 1000;
+let applyWatch = null;
+
+function stopApplyWatch() {
+  if (applyWatch) { clearInterval(applyWatch); applyWatch = null; }
+}
+
+async function showSavedScore(jobId, live = {}) {
+  try {
+    const { scoredIndex = {} } = await chrome.storage.local.get("scoredIndex");
+    const entry = scoredIndex[jobId];
+    const view = entry?.view;
+    if (!view?.roi) return false;
+
+    // Keep the screen current while the member stays on the apply page
+    if (!applyWatch) applyWatch = setInterval(() => scanActivePage(), APPLY_REFRESH_MS);
+
+    scrapedJobTitle.textContent = view.title || "Job";
+    const connects = live.connectsRequired ?? view.connectsNeeded;
+    scrapedJobConnects.textContent = connects != null ? `${connects} Connects (${getConnectsTier(connects)})` : "";
+    scrapedJobCountry.textContent = view.clientCountry || "";
+    scrapedJobCountry.classList.toggle("hide", !view.clientCountry);
+    document.getElementById("scraped-job-client").classList.add("hide");
+    jobDetailsCard.classList.remove("hide");
+    analyzerFallback.classList.add("hide");
+
+    const elapsed = Date.now() - entry.seenAt;
+    const status = (cls, text) => {
+      jobPageStatus.className = `status-alert ${cls}`;
+      jobPageStatus.querySelector(".status-text").textContent = text;
+    };
+
+    if (live.jobClosed) {
+      roiScoreCard.classList.add("hide");
+      status("info", "Upwork says this job is no longer available. Its score no longer applies.");
+      return true;
+    }
+
+    let roi = view.roi;
+    if (elapsed >= STALE_AFTER_MS && entry.snapshot?.inputs) {
+      roi = calculateROIScore(ageJob(jobFromInputs(entry.snapshot.inputs), elapsed, live.connectsRequired ?? undefined));
+      status("info", `Score recalculated for the ${timeAgo(entry.seenAt).replace(" ago", "")} since you viewed this job. Client activity is from then: reopen the job to refresh it.`);
+    } else {
+      status("success", `Score saved ${timeAgo(entry.seenAt)}, when you viewed this job`);
+    }
+    renderRoiBreakdown(roi);
+    return true;
+  } catch (err) {
+    logError("sidepanel → showSavedScore", err.message, "", err.stack);
+    return false;
+  }
+}
+
+function timeAgo(ms) {
+  const mins = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const h = Math.round(mins / 60);
+  return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
+}
+
+
+// Draws the score ring, verdict and the per-bucket breakdown for a roi result. Works from a live
+// scrape and from a score saved earlier (apply page), so both show the same thing.
+function renderRoiBreakdown(roi) {
+  roiReasonsList.innerHTML = "";
+  updateROIRadial(roi.score, roi.color);
+  roiLabel.textContent = roi.label;
+  roiLabel.style.backgroundColor = roi.color;
+
+  // Render interactive bucket breakdown
+  let currentUl = null;
+
+  roi.reasons.forEach(reason => {
+    if (reason.startsWith("──")) {
+      const m = reason.match(/── (.+?):\s*(\d+)\/100/);
+      const label = m ? m[1] : reason.replace(/──\s*/, "");
+      const score = m ? parseInt(m[2]) : null;
+
+      const details = document.createElement("details");
+      details.open = true;
+      details.classList.add("bucket-section");
+
+      const summary = document.createElement("summary");
+      summary.classList.add("bucket-summary");
+
+      const labelSpan = document.createElement("span");
+      labelSpan.classList.add("bucket-label");
+      labelSpan.textContent = label;
+      summary.appendChild(labelSpan);
+
+      if (score !== null) {
+        const sw = document.createElement("span");
+        sw.classList.add("bucket-score-wrap");
+        const bar = document.createElement("div");
+        bar.classList.add("bucket-score-bar");
+        const fill = document.createElement("div");
+        fill.classList.add("bucket-score-fill");
+        fill.style.width = score + "%";
+        fill.style.backgroundColor = score >= 70 ? "#10b981" : score >= 45 ? "#eab308" : "#ef4444";
+        bar.appendChild(fill);
+        sw.appendChild(bar);
+        const num = document.createElement("span");
+        num.classList.add("bucket-score-num");
+        num.textContent = score;
+        sw.appendChild(num);
+        summary.appendChild(sw);
+      }
+
+      details.appendChild(summary);
+      const ul = document.createElement("ul");
+      ul.classList.add("bucket-items");
+      details.appendChild(ul);
+
+      roiReasonsList.appendChild(details);
+      currentUl = ul;
+
+    } else {
+      if (currentUl) {
+        const li = document.createElement("li");
+        li.textContent = reason;
+        if (reason.startsWith("+"))      li.classList.add("reason-positive");
+        else if (reason.startsWith("-")) li.classList.add("reason-negative");
+        else                             li.classList.add("reason-neutral");
+        currentUl.appendChild(li);
+      } else {
+        const row = document.createElement("div");
+        row.classList.add("reason-row");
+        row.textContent = reason;
+        if (reason.startsWith("+"))      row.classList.add("reason-positive");
+        else if (reason.startsWith("-")) row.classList.add("reason-negative");
+        else                             row.classList.add("reason-neutral");
+        roiReasonsList.appendChild(row);
+      }
+    }
+  });
+
+  roiScoreCard.classList.remove("hide");
 }
 
 // Fallback panels utility
 function showFallbackUI() {
+  stopApplyWatch();
+  awaitingLoad = false;
+  awaitingTicks = 0;
   currentScrapedJob = null;
   currentRoi = null;
   updateLogJobButton();
   jobPageStatus.className = "status-alert info";
   jobPageStatus.querySelector(".status-text").textContent = "Detecting active Upwork job post...";
+  document.getElementById("fallback-icon").textContent = "🔍";
+  document.getElementById("fallback-title").textContent = "No job open";
+  document.getElementById("fallback-text").textContent = "Open an Upwork job page or click a job card in the feed, then press Scan Page.";
+  btnReloadJob.classList.remove("hide");
   jobDetailsCard.classList.add("hide");
   roiScoreCard.classList.add("hide");
   aiComingSoonCard.classList.add("hide");
@@ -659,10 +833,27 @@ async function trackStatusChanged(log) {
   }
 }
 
-// "Log proposal" button on the job card: only for a scored, identifiable job while Connected
+// The ROI Hub entry for the job on screen, if the member already applied to it
+function loggedProposalFor(job) {
+  return job?.jobId ? proposalLogs.find(l => l.jobId === job.jobId) : null;
+}
+
+// "Log proposal" button on the job card: only for a scored, identifiable job while Connected.
+// A job that is already logged (auto-tracked or by hand) gets a reminder, and the button edits that entry.
 function updateLogJobButton() {
   const show = !!(connection && currentScrapedJob && currentScrapedJob.jobId && currentRoi);
   btnLogJob.classList.toggle("hide", !show);
+
+  const logged = loggedProposalFor(currentScrapedJob);
+  const note = document.getElementById("applied-note");
+  note.classList.toggle("hide", !logged);
+  btnLogJob.textContent = logged ? "Update logged proposal" : "Log proposal for this job";
+  if (logged) {
+    const how = logged.source === "capture" ? "auto-tracked" : "logged by hand";
+    const edits = logged.revisions?.length ? ` · edited ${logged.revisions.length}×, earlier values kept` : "";
+    note.innerHTML = `✓ You already applied to this job` +
+      `<small>${escapeHtml(logged.date)} · ${logged.connects} connects · ${escapeHtml(logged.status)} · ${how}${edits}</small>`;
+  }
 }
 
 function updateLogLinkUI() {
@@ -697,8 +888,22 @@ function setupROILogger() {
       ...(linked && { jobId: linked.jobId, jobUrl: linked.jobUrl, scoreSnapshot: linked.scoreSnapshot })
     };
 
-    proposalLogs = await updateLogs(logs => [newLog, ...logs]); // newest first
-    trackProposalSubmitted(newLog);
+    // One entry per job: a hand entry for an already logged job updates it (keeping the earlier
+    // values) or, when identical, changes nothing.
+    const result = await recordManualLog(newLog);
+    proposalLogs = await updateLogs(logs => logs);
+    if (result.action === "created") {
+      trackProposalSubmitted(newLog);
+    } else if (result.action === "overridden") {
+      trackProposalSubmitted(result.log);
+      const before = result.log.revisions[result.log.revisions.length - 1];
+      if (before && before.status !== result.log.status) trackStatusChanged(result.log);
+    }
+    const message = {
+      created: "",
+      overridden: "Updated the logged proposal. The earlier values are kept in its history.",
+      unchanged: "Already logged with the same details. Nothing changed."
+    }[result.action];
 
     // Reset form fields
     logTitleInput.value = "";
@@ -707,9 +912,11 @@ function setupROILogger() {
     logStatusSelect.value = "applied";
     pendingLogJob = null;
     updateLogLinkUI();
+    if (message) logSyncHint.textContent = message;
 
     renderLogsList();
     updateROIStats();
+    updateLogJobButton();
   });
 
   btnLogJob.addEventListener("click", () => {
@@ -720,11 +927,13 @@ function setupROILogger() {
       title: currentScrapedJob.title,
       scoreSnapshot: buildScoreSnapshot(currentScrapedJob, currentRoi)
     };
+    const logged = loggedProposalFor(currentScrapedJob);
     logTitleInput.value = currentScrapedJob.title;
-    logConnectsInput.value = currentScrapedJob.connectsNeeded || 16;
-    logBoostSelect.value = "none";
-    logStatusSelect.value = "applied";
+    logConnectsInput.value = logged ? logged.connects : (currentScrapedJob.connectsNeeded || 16);
+    logBoostSelect.value = logged ? logged.boost : "none";
+    logStatusSelect.value = logged ? logged.status : "applied";
     updateLogLinkUI();
+    if (logged) logSyncHint.textContent = "This job is already logged. Saving updates that entry (no duplicate); its earlier values are kept in its history.";
     switchTab("roi-tab");
     logTitleInput.focus();
   });
@@ -735,6 +944,7 @@ function setupROILogger() {
       proposalLogs = changes.logs.newValue || [];
       renderLogsList();
       updateROIStats();
+      updateLogJobButton();
     }
   });
 
@@ -809,6 +1019,7 @@ function renderLogsList() {
           <span class="spent">-${log.connects} connects${boostLabel}</span>
           <span>•</span>
           <span class="status-badge ${escapeHtml(log.status)}">${escapeHtml(log.status)}</span>
+          ${log.revisions?.length ? `<span class="local-only-tag" title="${escapeHtml(revisionSummary(log))}">edited</span>` : ""}
           ${log.jobId ? "" : '<span class="local-only-tag" title="Not linked to a job, so it stays on this device. Use \'Log proposal\' on a scanned job to sync.">local only</span>'}
         </div>
       </div>
@@ -825,6 +1036,13 @@ function renderLogsList() {
     
     historyContainer.appendChild(item);
   });
+}
+
+// Tooltip text: every earlier version of a proposal, oldest first
+function revisionSummary(log) {
+  return log.revisions.map(r =>
+    `${new Date(r.at).toLocaleString()}: was ${r.connects} connects, ${r.boost === "none" ? "no boost" : r.boost}, ${r.status} (${r.source === "capture" ? "auto-tracked" : "by hand"})`
+  ).join("\n");
 }
 
 async function cycleLogStatus(id) {
