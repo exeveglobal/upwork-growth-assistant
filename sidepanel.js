@@ -16,8 +16,9 @@ import {
   verifyConnection
 } from './connection.js';
 import { enqueue, flush } from './outbox.js';
-import { updateLogs, recordManualLog } from './logs.js';
+import { updateLogs, recordManualLog, roiCounts, connectsLabel } from './logs.js';
 import { scanDisplay, PARTIAL_AFTER_TICKS } from './scan-state.js';
+import { refreshNudge } from './proposals-check.js';
 import { readDiag, formatDiag, clearDiag } from './diag.js';
 import {
   buildScoreSnapshot,
@@ -124,6 +125,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupROILogger();
   setupErrorLog();
 
+  setupCheckBanner();
+
   // Tier first (instant, from storage), then confirm the token with the engine in the background
   await refreshTier();
   flush().catch(() => {});
@@ -191,6 +194,42 @@ document.addEventListener("DOMContentLoaded", async () => {
     scanActivePage();
   });
 });
+
+// "Open your Proposals page" reminder. The extension never opens Upwork pages by itself: this button
+// opens the page on the member's own click, and the status is read while they look at it.
+function setupCheckBanner() {
+  const banner = document.getElementById("check-banner");
+  const text = document.getElementById("check-banner-text");
+  const button = document.getElementById("btn-check-open");
+  let url = null;
+
+  const render = (nudge) => {
+    banner.classList.toggle("hide", !nudge);
+    if (!nudge) return;
+    url = nudge.url;
+    const n = nudge.count;
+    const proposals = `${n} open proposal${n === 1 ? "" : "s"}`;
+    if (nudge.kind === "archive") {
+      text.textContent = `${n} proposal${n === 1 ? " has" : "s have"} left your Active list. Open Archived so their outcome can be recorded.`;
+      button.textContent = "Open Archived";
+    } else {
+      text.textContent = nudge.never
+        ? `You have ${proposals}. Open your Proposals page so their status can be updated.`
+        : `Your proposals haven't been checked for ${nudge.days} days (${proposals}). Open your Proposals page to update them.`;
+      button.textContent = "Open Proposals";
+    }
+  };
+
+  button.addEventListener("click", () => { if (url) chrome.tabs.create({ url }); });
+  chrome.storage.local.get("nudge").then(({ nudge }) => render(nudge || null));
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (changes.nudge) render(changes.nudge.newValue || null);
+    // Logs or the connection changed (a proposal added, closed by hand, device disconnected)
+    if (changes.logs || changes.connection) refreshNudge().catch(() => {});
+  });
+  refreshNudge().catch(() => {});
+}
 
 // Resets UI to "scanning" state — job header card stays visible so the user sees the
 // transition animation; ROI and proposal cards are hidden until new results arrive.
@@ -852,7 +891,7 @@ function updateLogJobButton() {
     const how = logged.source === "capture" ? "auto-tracked" : "logged by hand";
     const edits = logged.revisions?.length ? ` · edited ${logged.revisions.length}×, earlier values kept` : "";
     note.innerHTML = `✓ You already applied to this job` +
-      `<small>${escapeHtml(logged.date)} · ${logged.connects} connects · ${escapeHtml(logged.status)} · ${how}${edits}</small>`;
+      `<small>${escapeHtml(logged.date)} · ${escapeHtml(connectsLabel(logged))} · ${escapeHtml(logged.status)} · ${how}${edits}</small>`;
   }
 }
 
@@ -974,23 +1013,11 @@ async function loadProposalLogs() {
 }
 
 function updateROIStats() {
-  const totalProposals = proposalLogs.length;
-  let totalConnects = 0;
-  let totalInterviews = 0;
-  
-  proposalLogs.forEach(log => {
-    totalConnects += log.connects;
-    if (log.status === "interviewing" || log.status === "hired") {
-      totalInterviews += 1;
-    }
-  });
-
-  statTotalConnects.textContent = totalConnects;
-  statTotalProposals.textContent = totalProposals;
-  statTotalInterviews.textContent = totalInterviews;
-  
-  const conversionRate = totalProposals > 0 ? Math.round((totalInterviews / totalProposals) * 100) : 0;
-  statConversion.textContent = `${conversionRate}%`;
+  const counts = roiCounts(proposalLogs);
+  statTotalConnects.textContent = counts.connects;
+  statTotalProposals.textContent = counts.proposals;
+  statTotalInterviews.textContent = counts.interviews;
+  statConversion.textContent = `${counts.responseRatePct}%`;
 }
 
 function renderLogsList() {
@@ -1016,9 +1043,9 @@ function renderLogsList() {
         <div class="history-item-title" title="${escapeHtml(log.title)}">${escapeHtml(log.title)}</div>
         <div class="history-item-sub">
           <span>${log.date}</span>
-          <span class="spent">-${log.connects} connects${boostLabel}</span>
+          <span class="spent">-${escapeHtml(connectsLabel(log))}${boostLabel}</span>
           <span>•</span>
-          <span class="status-badge ${escapeHtml(log.status)}">${escapeHtml(log.status)}</span>
+          ${statusSelectHtml(log)}
           ${log.revisions?.length ? `<span class="local-only-tag" title="${escapeHtml(revisionSummary(log))}">edited</span>` : ""}
           ${log.jobId ? "" : '<span class="local-only-tag" title="Not linked to a job, so it stays on this device. Use \'Log proposal\' on a scanned job to sync.">local only</span>'}
         </div>
@@ -1026,10 +1053,8 @@ function renderLogsList() {
       <button class="btn-delete-log" data-id="${log.id}">×</button>
     `;
     
-    // Status click cycle toggle
-    const badge = item.querySelector(".status-badge");
-    badge.addEventListener("click", () => cycleLogStatus(log.id));
-    badge.style.cursor = "pointer";
+    // Status changed by hand (e.g. the client viewed or replied)
+    item.querySelector(".status-select").addEventListener("change", (e) => setLogStatus(log.id, e.target.value));
 
     // Bind delete listener
     item.querySelector(".btn-delete-log").addEventListener("click", () => deleteLog(log.id));
@@ -1045,14 +1070,31 @@ function revisionSummary(log) {
   ).join("\n");
 }
 
-async function cycleLogStatus(id) {
-  const statusCycle = ["applied", "interviewing", "hired", "rejected"];
-  let changed = null;
+// Statuses a member can set by hand, in funnel order. Auto-detected ones (withdrawn, archived)
+// are shown when present but not offered, since only Upwork's own pages can tell.
+const MANUAL_STATUSES = [
+  ["applied", "Applied"],
+  ["viewed", "Viewed by client"],
+  ["replied", "Client replied"],
+  ["interviewing", "Interviewing"],
+  ["hired", "Hired"],
+  ["rejected", "Rejected / closed"]
+];
 
+function statusSelectHtml(log) {
+  const known = MANUAL_STATUSES.some(([v]) => v === log.status);
+  const options = (known ? MANUAL_STATUSES : [...MANUAL_STATUSES, [log.status, log.status]])
+    .map(([v, label]) => `<option value="${escapeHtml(v)}"${v === log.status ? " selected" : ""}>${escapeHtml(label)}</option>`)
+    .join("");
+  return `<select class="status-select ${escapeHtml(log.status)}" data-id="${escapeHtml(log.id)}" aria-label="Proposal status">${options}</select>`;
+}
+
+async function setLogStatus(id, status) {
+  let changed = null;
   proposalLogs = await updateLogs(logs => {
     const log = logs.find(l => l.id === id);
-    if (!log) return logs;
-    log.status = statusCycle[(statusCycle.indexOf(log.status) + 1) % statusCycle.length];
+    if (!log || log.status === status) return logs;
+    log.status = status;
     changed = log;
     return logs;
   });
@@ -1060,6 +1102,7 @@ async function cycleLogStatus(id) {
 
   renderLogsList();
   updateROIStats();
+  updateLogJobButton();
 }
 
 async function deleteLog(id) {

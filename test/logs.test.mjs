@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { installChrome } from './fake-chrome.mjs';
 
 installChrome();
-const { applyManualLog, upsertCapturedLog } = await import('../logs.js');
+const { applyManualLog, upsertCapturedLog, roiCounts, connectsLabel } = await import('../logs.js');
 
 const captured = () => ({ id: '1', jobId: '~J', title: 'T', connects: 14, boost: 'none', status: 'applied', source: 'capture', submittedAt: '2026-10-04T10:00:00.000Z' });
 const manual = (over = {}) => ({ id: '2', jobId: '~J', title: 'T', connects: 14, boost: 'none', status: 'applied', ...over });
@@ -63,4 +63,23 @@ test('auto-capture that matches what is recorded adds no revision', async () => 
   await upsertCapturedLog({ jobId: '~J', title: 'T', connectsTotal: 14, submittedAt: '2026-10-04T10:00:00.000Z' });
   const { logs } = await globalThis.chrome.storage.local.get('logs');
   assert.equal(logs[0].revisions, undefined);
+});
+
+test('a client reply counts as a response but not as an interview', () => {
+  const logs = ['applied', 'viewed', 'replied', 'interviewing', 'hired', 'rejected'].map((status, i) => ({ id: String(i), status, connects: 10 }));
+  assert.deepEqual(roiCounts(logs), { proposals: 6, connects: 60, interviews: 2, responseRatePct: 50 });
+  assert.deepEqual(roiCounts([]), { proposals: 0, connects: 0, interviews: 0, responseRatePct: 0 });
+});
+
+test('a captured boosted proposal keeps what the total was made of, and a hand override drops that split', async () => {
+  globalThis.chrome.storage.local.set({ logs: [] });
+  await upsertCapturedLog({ jobId: '~B', title: 'T', connectsTotal: 29, connectsRequired: 20, connectsBoost: 9, boostRank: 2, submittedAt: '2026-10-04T10:00:00.000Z' });
+  let { logs } = await globalThis.chrome.storage.local.get('logs');
+  assert.equal(connectsLabel(logs[0]), '29 connects (20 job + 9 bid)');
+  assert.equal(connectsLabel({ connects: 20 }), '20 connects');
+  assert.equal(connectsLabel({ connects: 20, connectsJob: 20, connectsBid: 0 }), '20 connects');
+
+  const r = applyManualLog(logs, { ...manual({ jobId: '~B', connects: 31, boost: 'rank2' }) });
+  assert.equal(r.log.connectsJob, undefined);
+  assert.equal(connectsLabel(r.log), '31 connects');
 });

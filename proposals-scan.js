@@ -47,18 +47,28 @@
     return rows;
   }
 
-  globalThis.__ugaProposalsScan = { readRows, PAGE };
+  /** Which list this URL shows: the archive, or the Active/Submitted page. */
+  const pageOf = (pathname) => (/archived/.test(pathname || '') ? 'archived' : 'active');
+
+  /** The lists render their section headings ("Active proposals (0)") once loaded, even when empty. */
+  const listLoaded = (text) => /(Active|Submitted|Archived) proposals\s*\(\d+\)/i.test(text || '');
+
+  globalThis.__ugaProposalsScan = { readRows, PAGE, pageOf, listLoaded };
 
   if (typeof document === 'undefined' || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;
 
-  // The page is a SPA: poll while it is showing, and report whenever the visible rows change.
+  // The page is a SPA: poll while it is showing, and report whenever the visible rows change. An
+  // empty list is reported too (once it has loaded): "nothing is open any more" is a real answer.
   let last = '';
   setInterval(() => {
     if (!PAGE.test(location.pathname) || document.visibilityState !== 'visible') { last = ''; return; }
     const rows = readRows(document);
-    const fingerprint = JSON.stringify(rows);
-    if (!rows.length || fingerprint === last) return;
+    const loaded = rows.length > 0 || listLoaded((document.querySelector('main') || document.body).innerText);
+    if (!loaded) return;
+    const page = pageOf(location.pathname);
+    const fingerprint = JSON.stringify([page, rows]);
+    if (fingerprint === last) return;
     last = fingerprint;
-    try { chrome.runtime.sendMessage({ action: 'proposalsRows', rows }).catch(() => {}); } catch { /* extension reloaded */ }
+    try { chrome.runtime.sendMessage({ action: 'proposalsRows', rows, page }).catch(() => {}); } catch { /* extension reloaded */ }
   }, POLL_MS);
 })();

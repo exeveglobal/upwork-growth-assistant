@@ -179,3 +179,44 @@ test('hourly agency proposals keep the hourly rate, questions and boost', () => 
   );
   assert.ok(!('bidAmount' in p));
 });
+
+const { readDiag } = await import('../diag.js');
+const kinds = async () => (await readDiag()).map(d => d.kind);
+
+test('a boosted proposal is recorded with the job cost, the bid and the total', async () => {
+  await click(form({ connectsRequired: 20, connectsBoost: 9, connectsTotal: 29, boostRank: 3 }));
+  await handleTabUpdated(TAB, { url: DONE });
+  await flush();
+  const ev = sentEvents().find(e => e.type === 'proposal.submitted');
+  assert.deepEqual([ev.payload.connectsRequired, ev.payload.connectsBoost, ev.payload.connectsTotal, ev.payload.boostRank], [20, 9, 29, 3]);
+  assert.equal(logs()[0].connects, 29);
+  assert.ok((await kinds()).includes('apply.recorded'));
+  assert.ok(!(await kinds()).includes('apply.connects_unclear'));
+});
+
+test('numbers that do not add up, or a missing total, are noted in diagnostics', async () => {
+  await click(form({ connectsRequired: 20, connectsBoost: 9, connectsTotal: 20 }));
+  await handleTabRemoved(TAB);
+  assert.ok((await kinds()).includes('apply.connects_unclear'));
+  const f = form({ connectsRequired: 20 }); delete f.connectsTotal; delete f.connectsBoost;
+  await click(f);
+  assert.equal((await readDiag()).filter(d => d.kind === 'apply.connects_unclear').length, 2);
+});
+
+test('closing the tab right after Send records nothing but says why', async () => {
+  await click();
+  await handleTabRemoved(TAB);
+  await flush();
+  assert.equal(sentEvents().filter(e => e.type === 'proposal.submitted').length, 0);
+  const dropped = (await readDiag()).find(d => d.kind === 'apply.dropped');
+  assert.equal(dropped.detail.reason, 'tab_closed');
+});
+
+test('leaving the apply page long after Send is dropped and noted', async () => {
+  await click();
+  const pc = env.store[`pc:${TAB}`]; pc.at -= CONFIRM_WINDOW_MS + 5000; env.store[`pc:${TAB}`] = pc;
+  await handleTabUpdated(TAB, { url: DONE });
+  await flush();
+  assert.equal(sentEvents().filter(e => e.type === 'proposal.submitted').length, 0);
+  assert.equal((await readDiag()).find(d => d.kind === 'apply.dropped').detail.reason, 'left_too_late');
+});

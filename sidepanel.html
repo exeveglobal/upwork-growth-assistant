@@ -26,6 +26,12 @@
     <button id="btn-banner-connect" class="btn btn-secondary">Connect</button>
   </div>
 
+  <!-- Asks the member to open their Proposals page (statuses are read from it while they look) -->
+  <div id="check-banner" class="check-banner hide" role="status">
+    <span id="check-banner-text"></span>
+    <button id="btn-check-open" class="btn btn-primary">Open Proposals</button>
+  </div>
+
   <!-- Tab Buttons -->
   <nav class="tabs">
     <button class="tab-btn active" data-tab="analyzer-tab">
@@ -186,6 +192,8 @@
               <label for="log-status">Initial Status</label>
               <select id="log-status" class="form-input">
                 <option value="applied">Applied</option>
+                <option value="viewed">Viewed by client</option>
+                <option value="replied">Client replied</option>
                 <option value="interviewing">Interviewing</option>
                 <option value="hired">Hired</option>
                 <option value="rejected">Rejected / Closed</option>

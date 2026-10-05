@@ -78,7 +78,7 @@ test('summary: connects and fee are parsed from the real text', () => {
     connectsRequired: 20, connectsBoost: 0, connectsTotal: 20, connectsRemainingAfter: 169, serviceFeePct: 10
   });
   assert.deepEqual(parseSummary(FIXED_NO_BIDS), {
-    connectsRequired: undefined, connectsBoost: 0, connectsTotal: 14, connectsRemainingAfter: 175, serviceFeePct: undefined
+    connectsRequired: 14, connectsBoost: 0, connectsTotal: 14, connectsRemainingAfter: 175, serviceFeePct: undefined
   });
 });
 
@@ -134,4 +134,14 @@ test('readPaymentMode reads the fixed-price "How do you want to be paid?" choice
   assert.equal(readPaymentMode(docWith('milestone')), 'milestone');
   assert.equal(readPaymentMode(docWith('default')), 'project');
   assert.equal(readPaymentMode(docWith(null)), undefined);
+});
+
+test('summary: both Upwork wordings of the job cost, with and without a bid', () => {
+  const now = 'Summary\nBid to boost:\n9 Connects\nRequired for proposal:\n20 Connects\nTotal:\n29 Connects\nSend for 29 Connects';
+  assert.deepEqual([parseSummary(now).connectsRequired, parseSummary(now).connectsBoost, parseSummary(now).connectsTotal], [20, 9, 29]);
+  const old = 'This proposal requires 20 Connects\nBid to boost: 9 Connects\nTotal: 29 Connects';
+  assert.deepEqual([parseSummary(old).connectsRequired, parseSummary(old).connectsBoost, parseSummary(old).connectsTotal], [20, 9, 29]);
+  // no wording for the job cost at all: derived from total - boost
+  assert.equal(parseSummary('Bid to boost:\n9 Connects\nTotal:\n29 Connects').connectsRequired, 20);
+  assert.equal(parseSummary('Total: 29 Connects').connectsRequired, undefined, 'cannot derive without the boost');
 });

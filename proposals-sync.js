@@ -9,6 +9,7 @@ import { getConnection } from './connection.js';
 import { enqueue } from './outbox.js';
 import { updateLogs } from './logs.js';
 import { toCanonicalStatus, toLocalStatus } from './tracking.js';
+import { recordCheck } from './proposals-check.js';
 
 const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -39,12 +40,12 @@ export function statusFromRow(row) {
   }
 }
 
-const RANK = { submitted: 0, viewed: 1, interviewing: 2, hired: 3 };
+const RANK = { submitted: 0, viewed: 1, replied: 2, interviewing: 3, hired: 4 };
 const TERMINAL = new Set(['declined', 'withdrawn', 'archived']);
 
 /**
  * The status to keep given what we have and what Upwork now shows. Never overrides "hired"; moves
- * forward through submitted -> viewed -> interviewing -> hired; archive states apply unless hired.
+ * forward through submitted -> viewed -> replied -> interviewing -> hired; archive states apply unless hired.
  */
 export function nextStatus(local, scraped) {
   if (local === scraped || local === 'hired') return local;
@@ -70,13 +71,13 @@ function findLog(logs, row, seen) {
 let chain = Promise.resolve();
 
 /** Serialised: two reports in quick succession must not interleave their read-modify-write. */
-export function handleProposalsRows(rows, now = Date.now()) {
-  const run = chain.then(() => process(rows, now));
+export function handleProposalsRows(rows, now = Date.now(), page = 'active') {
+  const run = chain.then(() => process(rows, now, page));
   chain = run.catch(() => {});
   return run;
 }
 
-async function process(rows, now) {
+async function process(rows, now, page) {
   if (!(await getConnection())) return { matched: 0 }; // Free tier reads nothing
   if (!Array.isArray(rows)) return { matched: 0 };
 
@@ -84,6 +85,7 @@ async function process(rows, now) {
   const { logs = [] } = await chrome.storage.local.get('logs');
   const newSeen = { ...seen };
   const localUpdates = {}; // jobId -> new local status
+  const matchedJobIds = [];
   let matched = 0;
 
   for (const row of rows.slice(0, 100)) {
@@ -92,6 +94,7 @@ async function process(rows, now) {
     const log = findLog(logs, row, newSeen);
     if (!log) continue;
     matched++;
+    matchedJobIds.push(log.jobId);
 
     const prev = newSeen[row.proposalId];
     // Nothing new from Upwork since the last look: leave the proposal (and any manual override) alone
@@ -121,5 +124,9 @@ async function process(rows, now) {
       return all;
     });
   }
+
+  // The member looked at this list: remember when (and tell the engine), then refresh the reminder
+  const { logs: current = [] } = await chrome.storage.local.get('logs');
+  await recordCheck({ page, rowCount: rows.length, matchedJobIds, logs: current, now });
   return { matched };
 }

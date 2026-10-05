@@ -119,3 +119,10 @@ test('ageJob moves time forward and swaps in the Connects cost the apply page sh
   assert.equal(ageJob({ jobAgeHours: null, clientLastViewedHours: null, connectsNeeded: 14 }, 1000).jobAgeHours, null, 'unknown stays unknown');
   assert.equal(ageJob({ jobAgeHours: 1, connectsNeeded: 14 }, 1000).connectsNeeded, 14, 'no live value keeps the saved one');
 });
+
+test('replied maps to the engine status and back', async () => {
+  const { toCanonicalStatus, toLocalStatus } = await import('../tracking.js');
+  assert.equal(toCanonicalStatus('replied'), 'replied');
+  assert.equal(toLocalStatus('replied'), 'replied');
+  assert.equal(toCanonicalStatus('viewed'), 'viewed');
+});

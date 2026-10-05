@@ -25,11 +25,20 @@
     return m ? Number(m[1].replace(/,/g, '')) : undefined;
   }
 
+  /**
+   * The summary under "Boost your proposal". Upwork has worded the job's own cost two ways, "This
+   * proposal requires N Connects" (older) and "Required for proposal: N Connects" (now); both are read.
+   * When one number is missing but the other two are there, it is derived (total = required + boost).
+   */
   function parseSummary(text) {
+    const connectsRequired = intIn(text, /This proposal requires\s+([\d,]+)\s+Connects?/i)
+      ?? intIn(text, /Required for proposal:\s*([\d,]+)\s*Connects?/i);
+    const connectsBoost = intIn(text, /Bid to boost:\s*([\d,]+)\s*Connects?/i);
+    const connectsTotal = intIn(text, /Total:\s*([\d,]+)\s*Connects?/i);
     return {
-      connectsRequired: intIn(text, /This proposal requires\s+([\d,]+)\s+Connects?/i),
-      connectsBoost: intIn(text, /Bid to boost:\s*([\d,]+)\s*Connects?/i),
-      connectsTotal: intIn(text, /Total:\s*([\d,]+)\s*Connects?/i),
+      connectsRequired: connectsRequired ?? (connectsTotal !== undefined && connectsBoost !== undefined ? connectsTotal - connectsBoost : undefined),
+      connectsBoost,
+      connectsTotal,
       connectsRemainingAfter: intIn(text, /you['’]ll have\s+([\d,]+)\s+Connects?\s+remaining/i),
       serviceFeePct: intIn(text, /Service Fee:\s*(\d+)\s*%/i)
     };

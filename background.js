@@ -5,6 +5,7 @@ import { verifyConnection } from './connection.js';
 import { handleApplyMessage, handleTabUpdated, handleTabRemoved } from './capture.js';
 import { handleProposalsRows } from './proposals-sync.js';
 import { handleJobScraped } from './job-scored.js';
+import { refreshNudge } from './proposals-check.js';
 import { logDiag } from './diag.js';
 import { handleActivityTicks, flushActivity } from './activity-sync.js';
 import { logError } from './utils.js';
@@ -12,6 +13,7 @@ import { logError } from './utils.js';
 const FLUSH_ALARM = 'outbox-flush';
 const VERIFY_ALARM = 'verify-connection';
 const ACTIVITY_ALARM = 'activity-flush';
+const NUDGE_ALARM = 'proposals-nudge';
 
 chrome.runtime.onInstalled.addListener(() => {
   // Enable opening the side panel on clicking the extension icon
@@ -32,11 +34,13 @@ async function ensureAlarm(name, periodInMinutes) {
 ensureAlarm(FLUSH_ALARM, 1);
 ensureAlarm(VERIFY_ALARM, 15);
 ensureAlarm(ACTIVITY_ALARM, 5);
+ensureAlarm(NUDGE_ALARM, 30);
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === FLUSH_ALARM) flush().catch(() => {});
   if (alarm.name === VERIFY_ALARM) verifyConnection().catch(() => {});
   if (alarm.name === ACTIVITY_ALARM) flushActivity().catch(() => {});
+  if (alarm.name === NUDGE_ALARM) refreshNudge().catch(() => {});
 });
 
 // Apply-page capture: the content script reports Send/Cancel clicks; tab navigation confirms a send.
@@ -45,7 +49,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.action === 'applySendClicked' || message?.action === 'applyCancelled') {
     handleApplyMessage(message, sender).catch((err) => logError('background → apply message', err.message, '', err.stack));
   } else if (message?.action === 'proposalsRows') {
-    handleProposalsRows(message.rows).catch((err) => logError('background → proposals rows', err.message, '', err.stack));
+    handleProposalsRows(message.rows, Date.now(), message.page === 'archived' ? 'archived' : 'active').catch((err) => logError('background → proposals rows', err.message, '', err.stack));
   } else if (message?.action === 'jobScraped') {
     handleJobScraped(message.job).catch(() => {});
   } else if (message?.action === 'diag' && typeof message.kind === 'string') {
@@ -63,4 +67,5 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.runtime.onStartup.addListener(() => {
   flush().catch(() => {});
+  refreshNudge().catch(() => {});
 });

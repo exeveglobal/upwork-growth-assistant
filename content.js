@@ -143,9 +143,10 @@ function classifyPage() {
  */
 function readApplyState() {
   const text = (document.querySelector('main') || document.body).innerText || '';
-  const m = /This proposal requires\s+([\d,]+)\s+Connects?/i.exec(text);
+  // Same parser as the capture on this page (both Upwork wordings of the job's own Connects cost)
+  const parsed = globalThis.__ugaApplyCapture ? globalThis.__ugaApplyCapture.parseSummary(text) : {};
   return {
-    connectsRequired: m ? parseInt(m[1].replace(/,/g, ''), 10) : null,
+    connectsRequired: parsed.connectsRequired ?? null,
     jobClosed: /no longer (available|accepting)|job (is|has been) (closed|removed|filled)/i.test(text)
   };
 }

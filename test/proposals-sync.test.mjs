@@ -180,3 +180,13 @@ test('local logs without a job id (manual, unlinked) are never matched', async (
   env.store.logs = [log({ jobId: undefined })];
   assert.equal((await sync([row()])).matched, 0);
 });
+
+test('a status set by hand is not pulled back by Upwork showing less, but moves forward when it shows more', async () => {
+  const { nextStatus } = await import('../proposals-sync.js');
+  assert.equal(nextStatus('replied', 'submitted'), 'replied', 'manual reply survives a scan that still says submitted');
+  assert.equal(nextStatus('viewed', 'submitted'), 'viewed');
+  assert.equal(nextStatus('replied', 'interviewing'), 'interviewing', 'Upwork moving the proposal to Active wins');
+  assert.equal(nextStatus('submitted', 'replied'), 'replied');
+  assert.equal(nextStatus('hired', 'replied'), 'hired');
+  assert.equal(nextStatus('replied', 'archived'), 'archived', 'closed on Upwork still closes it');
+});

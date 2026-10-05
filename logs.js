@@ -13,6 +13,18 @@ export async function updateLogs(mutator) {
  * Adds a proposal captured from Upwork's apply page to the ROI Hub, or enriches the entry the
  * member already logged for the same job (never a duplicate).
  */
+/** What the total was made of, as read from Upwork's summary: the job's own cost and the bid. */
+const splitOf = (payload) => ({
+  ...(payload.connectsRequired !== undefined && { connectsJob: payload.connectsRequired }),
+  ...(payload.connectsBoost !== undefined && { connectsBid: payload.connectsBoost })
+});
+
+/** "29 connects (20 job + 9 bid)" when the split is known, else "29 connects". */
+export function connectsLabel(log) {
+  const base = `${log.connects} connects`;
+  return log.connectsBid > 0 && log.connectsJob !== undefined ? `${base} (${log.connectsJob} job + ${log.connectsBid} bid)` : base;
+}
+
 export function upsertCapturedLog(payload) {
   const connects = payload.connectsTotal ?? 0;
   const boost = payload.boostRank ? `rank${payload.boostRank}` : 'none';
@@ -32,6 +44,7 @@ export function upsertCapturedLog(payload) {
       Object.assign(existing, {
         connects: nextConnects,
         boost: nextBoost,
+        ...splitOf(payload),
         jobUrl: payload.jobUrl ?? existing.jobUrl,
         scoreSnapshot: existing.scoreSnapshot ?? payload.scoreSnapshot,
         source: 'capture'
@@ -49,6 +62,7 @@ export function upsertCapturedLog(payload) {
       jobId: payload.jobId,
       jobUrl: payload.jobUrl,
       scoreSnapshot: payload.scoreSnapshot,
+      ...splitOf(payload),
       source: 'capture'
     }, ...logs];
   });
@@ -78,6 +92,7 @@ export function applyManualLog(logs, entry, now = Date.now()) {
   }].slice(-MAX_REVISIONS);
 
   Object.assign(existing, { connects: entry.connects, boost: entry.boost, status: entry.status, source: 'manual', revisions });
+  if (entry.connects !== revisions[revisions.length - 1].connects) { delete existing.connectsJob; delete existing.connectsBid; }
   return { logs, action: 'overridden', log: existing };
 }
 
@@ -86,4 +101,20 @@ export async function recordManualLog(entry) {
   let result;
   await updateLogs((logs) => { result = applyManualLog(logs, entry); return result.logs; });
   return result;
+}
+
+const REPLIED_OR_BEYOND = new Set(['replied', 'interviewing', 'hired']);
+const INTERVIEW_OR_BEYOND = new Set(['interviewing', 'hired']);
+
+/** Numbers for the ROI Hub header. A client reply is a response even before an interview. */
+export function roiCounts(logs) {
+  const total = logs.length;
+  const interviews = logs.filter(l => INTERVIEW_OR_BEYOND.has(l.status)).length;
+  const responded = logs.filter(l => REPLIED_OR_BEYOND.has(l.status)).length;
+  return {
+    proposals: total,
+    connects: logs.reduce((sum, l) => sum + (Number.isFinite(l.connects) ? l.connects : 0), 0),
+    interviews,
+    responseRatePct: total > 0 ? Math.round((responded / total) * 100) : 0
+  };
 }

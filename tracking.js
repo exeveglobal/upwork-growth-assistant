@@ -8,6 +8,7 @@ const TITLE_MAX = 300;
 const LOCAL_TO_CANONICAL = {
   applied: 'submitted',
   viewed: 'viewed',
+  replied: 'replied',
   interviewing: 'interviewing',
   hired: 'hired',
   rejected: 'declined',
