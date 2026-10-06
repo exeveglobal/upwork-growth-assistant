@@ -26,6 +26,9 @@ The extension is built to stay inside how Upwork works for a person using it:
 - Upwork lists archived proposals 10 per page. Only the rows on the page the member has open are updated; the reminder names the proposals to look for.
 - The notice shown before connecting says all of this, and its version (`CONSENT_VERSION`) is raised whenever the wording or the data collected changes.
 
+## Developing against a local engine
+The released extension may only talk to `https://ege.exeve.global` (its manifest has no other host permission, by design). To try it against a local engine, in **your working copy** add `"http://127.0.0.1/*"` to `host_permissions` in `manifest.json` (do not commit it), then set `devEngineUrl` to `http://127.0.0.1:8787` in the extension's storage. Only `localhost` / `127.0.0.1` addresses are ever accepted there.
+
 ## Features
 
 | Feature | Description |

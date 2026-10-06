@@ -1,0 +1,6 @@
+# Weekly dependency update PRs (the extension has no runtime dependencies; only the icon tooling).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }

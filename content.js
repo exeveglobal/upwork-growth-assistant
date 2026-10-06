@@ -343,7 +343,7 @@ function scrapeJobDetailsPage() {
   const spendEl = root.querySelector('[data-qa="client-spend"]');
   let totalSpend = null;
   if (spendEl) {
-    const m = spendEl.textContent.match(/\$([\d,\.]+[KMB]?\+?)/i);
+    const m = spendEl.textContent.match(/\$([\d,.]+[KMB]?\+?)/i);
     if (m) totalSpend = m[1];
   }
   if (totalSpend === null) {
@@ -364,7 +364,7 @@ function scrapeJobDetailsPage() {
   }
 
   // Avg rate paid
-  const avgRateMatch = fullText.match(/\$([\d\.]+)\s*\/hr\s+avg/i) || fullText.match(/\$([\d\.]+)\s*avg\s+hourly/i);
+  const avgRateMatch = fullText.match(/\$([\d.]+)\s*\/hr\s+avg/i) || fullText.match(/\$([\d.]+)\s*avg\s+hourly/i);
   const avgRatePaid = avgRateMatch ? `$${avgRateMatch[1]}/hr` : "N/A";
 
   // --- Contract Type ---
@@ -455,7 +455,7 @@ function scrapeJobDetailsPage() {
   }
 
   // --- Client Location ---
-  let clientCountry = "";
+  let clientCountry;
   const locationEl = root.querySelector('[data-qa="client-location"] strong, [data-qa="client-location"]');
   if (locationEl) {
     clientCountry = locationEl.textContent.trim();

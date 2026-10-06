@@ -172,7 +172,7 @@ test('free tier: rows are ignored entirely', async () => {
 test('garbage input does not throw', async () => {
   env.store.logs = [log()];
   assert.deepEqual(await sync(undefined), { matched: 0 });
-  assert.deepEqual(await sync([null && 1, {}, { section: 'archived' }].filter(Boolean)), { matched: 0 });
+  assert.deepEqual(await sync([null, undefined, 42, 'x', {}, { section: 'archived' }]), { matched: 0 });
   assert.equal(events().length, 0);
 });
 

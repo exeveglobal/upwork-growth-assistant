@@ -76,7 +76,6 @@ test('concurrent pushes from different tabs never lose a job', async () => {
 
 test('score taken in one tab is attached when applying from another tab after the first closed', async () => {
   await handleJobScraped(job());
-  const APPLY = `https://www.upwork.com/nx/proposals/job/${ID}/apply/`;
   const data = {
     jobId: ID, title: 'Elementor Specialist', applyAs: 'agency:EXEVE Global', connectsRequired: 14, connectsBoost: 6,
     connectsTotal: 20, boostRank: 2, contractType: 'hourly', hourlyRate: 30, youReceive: 27, coverLetter: 'Hi'

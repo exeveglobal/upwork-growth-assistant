@@ -93,6 +93,7 @@ async function process(rows, now, page) {
   let matched = 0;
 
   for (const row of rows.slice(0, 100)) {
+    if (!row || typeof row !== 'object') continue; // never trust the shape of what a page produced
     const scraped = statusFromRow(row);
     if (!scraped || !/^\d{6,30}$/.test(String(row.proposalId))) continue;
     const log = findLog(logs, row, newSeen);

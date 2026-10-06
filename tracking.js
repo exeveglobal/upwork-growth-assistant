@@ -26,6 +26,17 @@ export function boostRankNumber(boost) {
   return m ? Number(m[1]) : undefined;
 }
 
+/**
+ * Balance after sending = balance before minus the TOTAL spent (the job's cost plus any boost bid).
+ * Upwork's own sentence ("you'll have N Connects remaining") only subtracts the job's cost, so it is
+ * used only when the other two numbers are missing.
+ */
+export function balanceAfter(data) {
+  const total = data.connectsTotal ?? (data.connectsRequired !== undefined ? data.connectsRequired + (data.connectsBoost || 0) : undefined);
+  if (data.connectsAvailableBefore !== undefined && total !== undefined) return Math.max(0, data.connectsAvailableBefore - total);
+  return data.connectsRemainingAfter;
+}
+
 const round2 = (n) => Math.round(n * 100) / 100;
 const orNull = (v) => (v === undefined || v === '' || Number.isNaN(v) ? null : v);
 const cleanText = (v, bad = []) => (typeof v === 'string' && v && !bad.includes(v) ? v : null);
@@ -170,7 +181,7 @@ export function buildCapturedProposalPayload(data, scored, appliedAtMs) {
     boostRank: data.boostRank,
     connectsRequired: data.connectsRequired,
     connectsAvailableBefore: data.connectsAvailableBefore,
-    connectsRemainingAfter: data.connectsRemainingAfter,
+    connectsRemainingAfter: balanceAfter(data),
     contractType: data.contractType,
     paymentMode: data.paymentMode,
     milestones: data.milestones,

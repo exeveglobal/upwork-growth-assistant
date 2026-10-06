@@ -17,6 +17,7 @@ import {
 } from './connection.js';
 import { enqueue, flush } from './outbox.js';
 import { updateLogs, recordManualLog, roiCounts, connectsLabel, findLoggedByTitle, visibleLogs, adoptLegacyLogs } from './logs.js';
+import { escapeHtml } from './html.js';
 import { scanDisplay, PARTIAL_AFTER_TICKS } from './scan-state.js';
 import { refreshNudge } from './proposals-check.js';
 import { readDiag, formatDiag, clearDiag } from './diag.js';
@@ -1071,14 +1072,14 @@ function renderLogsList() {
     
     let boostLabel = "";
     if (log.boost !== "none") {
-      boostLabel = ` | Boost: ${log.boost.replace("rank", "Rank ")}`;
+      boostLabel = ` | Boost: ${escapeHtml(String(log.boost).replace("rank", "Rank "))}`;
     }
 
     item.innerHTML = `
       <div class="history-item-details">
         <div class="history-item-title" title="${escapeHtml(log.title)}">${escapeHtml(log.title)}</div>
         <div class="history-item-sub">
-          <span>${log.date}</span>
+          <span>${escapeHtml(log.date)}</span>
           <span class="spent">-${escapeHtml(connectsLabel(log))}${boostLabel}</span>
           ${statusSelectHtml(log)}
           ${log.revisions?.length ? `<span class="local-only-tag" title="${escapeHtml(revisionSummary(log))}">edited</span>` : ""}
@@ -1086,8 +1087,8 @@ function renderLogsList() {
           ${log.jobId ? "" : '<span class="local-only-tag" title="Not linked to a job, so it stays on this device. Use \'Log proposal\' on a scanned job to sync.">local only</span>'}
         </div>
       </div>
-      ${log.jobId ? `<button class="btn-edit-log" data-id="${log.id}" title="Edit connects, boost or status" aria-label="Edit this proposal">✎</button>` : ""}
-      <button class="btn-delete-log" data-id="${log.id}" aria-label="Delete this entry">×</button>
+      ${log.jobId ? `<button class="btn-edit-log" data-id="${escapeHtml(log.id)}" title="Edit connects, boost or status" aria-label="Edit this proposal">✎</button>` : ""}
+      <button class="btn-delete-log" data-id="${escapeHtml(log.id)}" aria-label="Delete this entry">×</button>
     `;
     
     // Status changed by hand (e.g. the client viewed or replied)
@@ -1219,7 +1220,7 @@ function renderErrorLog(logs) {
       <div class="error-log-entry">
         <div class="error-log-meta">
           <span class="error-log-context">${escapeHtml(entry.context)}</span>
-          <span class="error-log-time">${date}</span>
+          <span class="error-log-time">${escapeHtml(date)}</span>
         </div>
         <div class="error-log-message">${escapeHtml(entry.message)}</div>
         ${entry.url ? `<div class="error-log-url">${escapeHtml(entry.url)}</div>` : ''}
@@ -1228,10 +1229,3 @@ function renderErrorLog(logs) {
   }).join('');
 }
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}

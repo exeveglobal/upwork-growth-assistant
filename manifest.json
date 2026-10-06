@@ -12,9 +12,7 @@
   ],
   "host_permissions": [
     "https://*.upwork.com/*",
-    "https://ege.exeve.global/*",
-    "http://localhost/*",
-    "http://127.0.0.1/*"
+    "https://ege.exeve.global/*"
   ],
   "background": {
     "service_worker": "background.js",

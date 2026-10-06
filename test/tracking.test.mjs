@@ -126,3 +126,20 @@ test('replied maps to the engine status and back', async () => {
   assert.equal(toLocalStatus('replied'), 'replied');
   assert.equal(toCanonicalStatus('viewed'), 'viewed');
 });
+
+test('balance after is the balance before minus the TOTAL spent (job + bid), not Upwork\'s job-only figure', async () => {
+  const { balanceAfter, buildCapturedProposalPayload } = await import('../tracking.js');
+  // 156 available, job 20 + bid 9 = 29: Upwork's sentence would say 136 (job only)
+  const data = { jobId: '~022106923805027543072', connectsAvailableBefore: 156, connectsRequired: 20, connectsBoost: 9, connectsTotal: 29, connectsRemainingAfter: 136 };
+  assert.equal(balanceAfter(data), 127);
+  assert.equal(buildCapturedProposalPayload(data, undefined, Date.now()).connectsRemainingAfter, 127);
+  // no boost: same as Upwork's figure
+  assert.equal(balanceAfter({ connectsAvailableBefore: 156, connectsRequired: 26, connectsBoost: 0, connectsTotal: 26, connectsRemainingAfter: 130 }), 130);
+  // total missing: derived from required + boost
+  assert.equal(balanceAfter({ connectsAvailableBefore: 100, connectsRequired: 10, connectsBoost: 5 }), 85);
+  // never negative
+  assert.equal(balanceAfter({ connectsAvailableBefore: 5, connectsTotal: 29 }), 0);
+  // not enough to compute: fall back to what Upwork said, or nothing
+  assert.equal(balanceAfter({ connectsRemainingAfter: 42 }), 42);
+  assert.equal(balanceAfter({}), undefined);
+});
