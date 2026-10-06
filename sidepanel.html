@@ -204,6 +204,22 @@
             </div>
           </div>
 
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="log-contract">Contract</label>
+              <select id="log-contract" class="form-input">
+                <option value="">Not recorded</option>
+                <option value="hourly">Hourly</option>
+                <option value="fixed">Fixed price</option>
+              </select>
+            </div>
+            <div class="form-group flex-1">
+              <label for="log-rate" id="log-rate-label">Rate or bid ($)</label>
+              <input type="number" id="log-rate" class="form-input" min="0" step="0.01" placeholder="e.g. 14">
+            </div>
+          </div>
+          <small class="help-text">If you change your price on Upwork after sending, edit it here too so Exeve sees the new one.</small>
+
           <button type="submit" id="log-submit" class="btn btn-success btn-full">Add to History</button>
           <small id="log-sync-hint" class="help-text"></small>
         </form>

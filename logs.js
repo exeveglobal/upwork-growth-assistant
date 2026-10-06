@@ -13,6 +13,23 @@ export async function updateLogs(mutator) {
  * Adds a proposal captured from Upwork's apply page to the ROI Hub, or enriches the entry the
  * member already logged for the same job (never a duplicate).
  */
+/** The price terms of a proposal as read from the apply page (only what was actually read). */
+const termsOf = (payload) => ({
+  ...(payload.contractType !== undefined && { contractType: payload.contractType }),
+  ...(payload.hourlyRate !== undefined && { hourlyRate: payload.hourlyRate }),
+  ...(payload.bidAmount !== undefined && { bidAmount: payload.bidAmount }),
+  ...(payload.youReceive !== undefined && { youReceive: payload.youReceive }),
+  ...(payload.serviceFeePct !== undefined && { serviceFeePct: payload.serviceFeePct })
+});
+
+/** "$14/hr" or "$650 fixed", or '' when the price is not recorded. */
+export function termsLabel(log) {
+  const money = (n) => `$${Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+  if (log.hourlyRate !== undefined) return `${money(log.hourlyRate)}/hr`;
+  if (log.bidAmount !== undefined) return `${money(log.bidAmount)} fixed`;
+  return '';
+}
+
 /** What the total was made of, as read from Upwork's summary: the job's own cost and the bid. */
 const splitOf = (payload) => ({
   ...(payload.connectsRequired !== undefined && { connectsJob: payload.connectsRequired }),
@@ -35,16 +52,16 @@ export function upsertCapturedLog(payload, memberId) {
       const nextBoost = payload.boostRank ? boost : existing.boost;
       const nextConnects = payload.connectsTotal ?? existing.connects;
       // Capture disagrees with what is already recorded (e.g. typed by hand): keep the earlier values
-      if (nextConnects !== existing.connects || nextBoost !== existing.boost) {
-        existing.revisions = [...(existing.revisions || []), {
-          at: new Date().toISOString(), source: existing.source === 'capture' ? 'capture' : 'manual',
-          connects: existing.connects, boost: existing.boost, status: existing.status
-        }].slice(-MAX_REVISIONS);
+      const terms = termsOf(payload);
+      const termsChanged = ['hourlyRate', 'bidAmount'].some(k => terms[k] !== undefined && terms[k] !== existing[k]);
+      if (nextConnects !== existing.connects || nextBoost !== existing.boost || termsChanged) {
+        existing.revisions = [...(existing.revisions || []), snapshotOf(existing, existing.source === 'capture' ? 'capture' : 'manual')].slice(-MAX_REVISIONS);
       }
       Object.assign(existing, {
         connects: nextConnects,
         boost: nextBoost,
         ...splitOf(payload),
+        ...terms,
         jobUrl: payload.jobUrl ?? existing.jobUrl,
         scoreSnapshot: existing.scoreSnapshot ?? payload.scoreSnapshot,
         source: 'capture'
@@ -63,6 +80,7 @@ export function upsertCapturedLog(payload, memberId) {
       jobUrl: payload.jobUrl,
       scoreSnapshot: payload.scoreSnapshot,
       ...splitOf(payload),
+      ...termsOf(payload),
       ...(memberId && { memberId }),
       source: 'capture'
     }, ...logs];
@@ -70,30 +88,39 @@ export function upsertCapturedLog(payload, memberId) {
 }
 
 const MAX_REVISIONS = 20;
-const TRACKED = ['connects', 'boost', 'status'];
+const TRACKED = ['connects', 'boost', 'status', 'hourlyRate', 'bidAmount'];
+const OPTIONAL_TERMS = ['contractType', 'hourlyRate', 'bidAmount', 'youReceive', 'serviceFeePct'];
+
+/** The values a row holds now, kept as a revision before they are replaced. */
+function snapshotOf(log, source) {
+  const snap = { source, connects: log.connects, boost: log.boost, status: log.status };
+  for (const k of ['hourlyRate', 'bidAmount', 'youReceive']) if (log[k] !== undefined) snap[k] = log[k];
+  return snap;
+}
 
 /**
  * Adds a hand-logged proposal to the ROI Hub without duplicating one that exists for the same job.
  *   - no entry for the job yet           -> created
  *   - an entry exists, same values       -> unchanged (nothing is added or sent)
  *   - an entry exists, values differ     -> the entry takes the hand-entered values, and what it held
- *     before (e.g. what was auto-tracked from the apply page) is kept in `revisions`
+ *     before (e.g. what was auto-tracked from the apply page, or the price before it was edited) is kept in `revisions`
+ * The price (hourly rate or fixed bid) is compared only when the entry carries one.
  * Entries without a job id are always separate. Returns { logs, action, log }.
  */
 export function applyManualLog(logs, entry, now = Date.now()) {
   const existing = entry.jobId ? logs.find(l => l.jobId === entry.jobId && l.memberId === entry.memberId) : null;
   if (!existing) return { logs: [entry, ...logs], action: 'created', log: entry };
 
-  if (TRACKED.every(k => existing[k] === entry[k])) return { logs, action: 'unchanged', log: existing };
+  if (!TRACKED.some(k => entry[k] !== undefined && existing[k] !== entry[k])) return { logs, action: 'unchanged', log: existing };
 
-  const revisions = [...(existing.revisions || []), {
-    at: new Date(now).toISOString(),
-    source: existing.source === 'capture' ? 'capture' : 'manual',
-    connects: existing.connects, boost: existing.boost, status: existing.status
-  }].slice(-MAX_REVISIONS);
+  const revision = { at: new Date(now).toISOString(), ...snapshotOf(existing, existing.source === 'capture' ? 'capture' : 'manual') };
+  const revisions = [...(existing.revisions || []), revision].slice(-MAX_REVISIONS);
 
   Object.assign(existing, { connects: entry.connects, boost: entry.boost, status: entry.status, source: 'manual', revisions });
-  if (entry.connects !== revisions[revisions.length - 1].connects) { delete existing.connectsJob; delete existing.connectsBid; }
+  for (const k of OPTIONAL_TERMS) if (entry[k] !== undefined) existing[k] = entry[k];
+  // a price changed by hand: the old "you'll receive" no longer matches it
+  if (['hourlyRate', 'bidAmount'].some(k => entry[k] !== undefined && entry[k] !== revision[k]) && entry.youReceive === undefined) delete existing.youReceive;
+  if (entry.connects !== revision.connects) { delete existing.connectsJob; delete existing.connectsBid; }
   return { logs, action: 'overridden', log: existing };
 }
 

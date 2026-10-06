@@ -16,7 +16,7 @@ import {
   verifyConnection
 } from './connection.js';
 import { enqueue, flush } from './outbox.js';
-import { updateLogs, recordManualLog, roiCounts, connectsLabel, findLoggedByTitle, visibleLogs, adoptLegacyLogs } from './logs.js';
+import { updateLogs, recordManualLog, roiCounts, connectsLabel, termsLabel, findLoggedByTitle, visibleLogs, adoptLegacyLogs } from './logs.js';
 import { escapeHtml } from './html.js';
 import { scanDisplay, PARTIAL_AFTER_TICKS } from './scan-state.js';
 import { refreshNudge } from './proposals-check.js';
@@ -100,6 +100,9 @@ const logTitleInput = document.getElementById("log-title");
 const logConnectsInput = document.getElementById("log-connects");
 const logBoostSelect = document.getElementById("log-boost");
 const logStatusSelect = document.getElementById("log-status");
+const logContractSelect = document.getElementById("log-contract");
+const logRateInput = document.getElementById("log-rate");
+const logRateLabel = document.getElementById("log-rate-label");
 const historyContainer = document.getElementById("history-container");
 const btnClearHistory = document.getElementById("btn-clear-history");
 
@@ -873,6 +876,11 @@ async function trackProposalSubmitted(log) {
       status: toCanonicalStatus(log.status),
       connectsTotal: Number.isFinite(log.connects) ? log.connects : undefined,
       ...(boostRank && { boostRank }),
+      ...(log.contractType && { contractType: log.contractType }),
+      ...(log.hourlyRate !== undefined && { hourlyRate: log.hourlyRate }),
+      ...(log.bidAmount !== undefined && { bidAmount: log.bidAmount }),
+      ...(log.youReceive !== undefined && { youReceive: log.youReceive }),
+      ...(log.serviceFeePct !== undefined && { serviceFeePct: log.serviceFeePct }),
       scoreSnapshot: log.scoreSnapshot
     }, { occurredAt: log.submittedAt, scoringVersion: SCORING_VERSION });
   } catch (err) {
@@ -934,8 +942,37 @@ function switchTab(panelId) {
   if (btn) btn.click();
 }
 
+// The price fields of the log form: the label follows the contract type
+/** The price typed in the form, plus what it is worth to the member after Upwork's fee when that fee is known. */
+function termsFromForm(linked) {
+  const contract = logContractSelect.value;
+  if (!contract) return {};
+  const rate = logRateInput.value === "" ? undefined : Number(logRateInput.value);
+  const terms = { contractType: contract };
+  if (rate === undefined || !Number.isFinite(rate) || rate < 0) return terms;
+  terms[contract === "hourly" ? "hourlyRate" : "bidAmount"] = rate;
+  const known = linked ? proposalLogs.find(l => l.jobId === linked.jobId) : null;
+  if (known && Number.isFinite(known.serviceFeePct)) {
+    terms.serviceFeePct = known.serviceFeePct;
+    terms.youReceive = Math.round(rate * (1 - known.serviceFeePct / 100) * 100) / 100;
+  }
+  return terms;
+}
+
+function updateRateLabel() {
+  logRateLabel.textContent = logContractSelect.value === "hourly" ? "Hourly rate ($/hr)" : logContractSelect.value === "fixed" ? "Fixed bid ($)" : "Rate or bid ($)";
+}
+function fillTerms(log, job) {
+  const contract = log?.contractType || (job && typeof job.isHourly === "boolean" ? (job.isHourly ? "hourly" : "fixed") : "");
+  logContractSelect.value = contract;
+  logRateInput.value = log?.hourlyRate ?? log?.bidAmount ?? "";
+  updateRateLabel();
+}
+function clearTerms() { logContractSelect.value = ""; logRateInput.value = ""; updateRateLabel(); }
+
 // ROI Hub Tracker Log Functions
 function setupROILogger() {
+  logContractSelect.addEventListener("change", updateRateLabel);
   proposalLogForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     
@@ -959,6 +996,7 @@ function setupROILogger() {
       connects: parseInt(logConnectsInput.value, 10),
       boost: logBoostSelect.value,
       status: logStatusSelect.value,
+      ...termsFromForm(linked),
       // Linked entries carry the job id so they can sync; the score is frozen as it was when applying
       ...(linked && { jobId: linked.jobId, jobUrl: linked.jobUrl, scoreSnapshot: linked.scoreSnapshot })
     };
@@ -985,6 +1023,7 @@ function setupROILogger() {
     logConnectsInput.value = 16;
     logBoostSelect.value = "none";
     logStatusSelect.value = "applied";
+    clearTerms();
     pendingLogJob = null;
     updateLogLinkUI();
     if (message) logSyncHint.textContent = message;
@@ -1007,6 +1046,7 @@ function setupROILogger() {
     logConnectsInput.value = logged ? logged.connects : (currentScrapedJob.connectsNeeded || 16);
     logBoostSelect.value = logged ? logged.boost : "none";
     logStatusSelect.value = logged ? logged.status : "applied";
+    fillTerms(logged, currentScrapedJob);
     updateLogLinkUI();
     if (logged) logSyncHint.textContent = "This job is already logged. Saving updates that entry (no duplicate); its earlier values are kept in its history.";
     switchTab("roi-tab");
@@ -1081,6 +1121,7 @@ function renderLogsList() {
         <div class="history-item-sub">
           <span>${escapeHtml(log.date)}</span>
           <span class="spent">-${escapeHtml(connectsLabel(log))}${boostLabel}</span>
+          ${termsLabel(log) ? `<span title="Your price">${escapeHtml(termsLabel(log))}</span>` : ""}
           ${statusSelectHtml(log)}
           ${log.revisions?.length ? `<span class="local-only-tag" title="${escapeHtml(revisionSummary(log))}">edited</span>` : ""}
           ${log.syncIssue ? `<span class="local-only-tag sync-issue" title="${escapeHtml(syncIssueText(log.syncIssue))}">not synced</span>` : ""}
@@ -1111,6 +1152,7 @@ function startEditingLog(log) {
   logConnectsInput.value = log.connects;
   logBoostSelect.value = log.boost;
   logStatusSelect.value = MANUAL_STATUSES.some(([v]) => v === log.status) ? log.status : "applied";
+  fillTerms(log, null);
   updateLogLinkUI();
   logSyncHint.textContent = "Editing a logged proposal. Saving updates it and keeps its earlier values in its history.";
   proposalLogForm.scrollIntoView({ behavior: "smooth", block: "start" });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { installChrome } from './fake-chrome.mjs';
 
 installChrome();
-const { applyManualLog, upsertCapturedLog, roiCounts, connectsLabel, findLoggedByTitle, normalizeTitle } = await import('../logs.js');
+const { applyManualLog, upsertCapturedLog, roiCounts, connectsLabel, termsLabel, findLoggedByTitle, normalizeTitle } = await import('../logs.js');
 
 const captured = () => ({ id: '1', jobId: '~J', title: 'T', connects: 14, boost: 'none', status: 'applied', source: 'capture', submittedAt: '2026-10-04T10:00:00.000Z' });
 const manual = (over = {}) => ({ id: '2', jobId: '~J', title: 'T', connects: 14, boost: 'none', status: 'applied', ...over });
@@ -107,4 +107,48 @@ test('matching by title turns a typed correction into an override of the synced 
   assert.equal(r.logs.length, 1);
   assert.equal(r.log.connects, 29);
   assert.equal(r.log.jobId, '~A', 'still synced');
+});
+
+test('the price is kept on a captured proposal and shown as a label', async () => {
+  globalThis.chrome.storage.local.set({ logs: [] });
+  await upsertCapturedLog({ jobId: '~P', title: 'T', connectsTotal: 16, contractType: 'hourly', hourlyRate: 20, youReceive: 18, serviceFeePct: 10, submittedAt: '2026-10-04T10:00:00.000Z' }, 'm1');
+  const { logs } = await globalThis.chrome.storage.local.get('logs');
+  assert.deepEqual([logs[0].contractType, logs[0].hourlyRate, logs[0].youReceive, logs[0].serviceFeePct], ['hourly', 20, 18, 10]);
+  assert.equal(termsLabel(logs[0]), '$20/hr');
+  assert.equal(termsLabel({ bidAmount: 1250.5 }), '$1,250.5 fixed');
+  assert.equal(termsLabel({ connects: 5 }), '');
+});
+
+test('editing the price by hand overrides it, keeps the earlier price, and drops the stale "you receive"', () => {
+  const row = { ...captured(), contractType: 'hourly', hourlyRate: 20, youReceive: 18, serviceFeePct: 10 };
+  const r = applyManualLog([row], manual({ contractType: 'hourly', hourlyRate: 14 }), Date.parse('2026-10-05T08:00:00Z'));
+  assert.equal(r.action, 'overridden');
+  assert.equal(r.logs.length, 1);
+  assert.equal(r.log.hourlyRate, 14);
+  assert.equal(r.log.youReceive, undefined, 'the old figure no longer matches the new price');
+  assert.equal(r.log.revisions.length, 1);
+  assert.deepEqual(r.log.revisions[0], { at: '2026-10-05T08:00:00.000Z', source: 'capture', connects: 14, boost: 'none', status: 'applied', hourlyRate: 20, youReceive: 18 });
+  assert.equal(r.log.connects, 14, 'nothing else changed');
+
+  // the new "you receive" is kept when it is sent along
+  const r2 = applyManualLog(r.logs, manual({ contractType: 'hourly', hourlyRate: 13, youReceive: 11.7 }));
+  assert.equal(r2.log.youReceive, 11.7);
+  assert.deepEqual(r2.log.revisions.map(v => v.hourlyRate), [20, 14]);
+});
+
+test('an entry without a price never wipes the recorded one, and the same price is not a change', () => {
+  const row = { ...captured(), contractType: 'hourly', hourlyRate: 14 };
+  const keep = applyManualLog([row], manual({ connects: 16 }));
+  assert.equal(keep.action, 'overridden');
+  assert.equal(keep.log.hourlyRate, 14, 'a connects correction leaves the price alone');
+  const same = applyManualLog([{ ...captured(), contractType: 'hourly', hourlyRate: 14 }], manual({ contractType: 'hourly', hourlyRate: 14 }));
+  assert.equal(same.action, 'unchanged');
+});
+
+test('an auto-capture that disagrees with a hand-edited price keeps the hand-edited one as history', async () => {
+  globalThis.chrome.storage.local.set({ logs: [{ ...manual({ memberId: 'm1' }), hourlyRate: 14, contractType: 'hourly' }] });
+  await upsertCapturedLog({ jobId: '~J', title: 'T', connectsTotal: 14, hourlyRate: 20, contractType: 'hourly', submittedAt: '2026-10-04T10:00:00.000Z' }, 'm1');
+  const { logs } = await globalThis.chrome.storage.local.get('logs');
+  assert.equal(logs[0].hourlyRate, 20);
+  assert.equal(logs[0].revisions[0].hourlyRate, 14);
 });

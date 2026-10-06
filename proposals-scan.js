@@ -47,20 +47,49 @@
     return rows;
   }
 
+  // ── learning aid: the structure of a submitted proposal's own page ───────────────────────────────
+  // Editing a sent proposal's price happens on Upwork, on pages whose layout we have not seen yet. While the
+  // member has such a page open, remember only its STRUCTURE (form field ids and types, button labels) so the
+  // diagnostics can show how to capture edits automatically in a future version. No text the member wrote.
+  const DETAIL = /^\/nx\/proposals\/\d{6,30}(\/[A-Za-z-]+)?\/?$/;
+
+  function describeProposalPage(doc, pathname) {
+    const controls = [...doc.querySelectorAll('input, textarea, select')]
+      .filter(el => el.type !== 'hidden' && el.type !== 'file')
+      .slice(0, 25)
+      .map(el => [String(el.tagName).toLowerCase(), el.type || '', el.id || '', el.name || '', (el.getAttribute('aria-labelledby') || el.getAttribute('aria-label')) ? 'labelled' : ''].join('|'));
+    const buttons = [...doc.querySelectorAll('button, a[role="button"]')]
+      .map(b => String(b.innerText || '').trim())
+      .filter(t => t.length > 0 && t.length < 40 && /^(update|save|submit|send|change|edit|withdraw|cancel|view)\b/i.test(t))
+      .slice(0, 12);
+    return { path: pathname.replace(/\d{6,30}/g, '<id>'), controls, buttons };
+  }
+
   /** Which list this URL shows: the archive, or the Active/Submitted page. */
   const pageOf = (pathname) => (/archived/.test(pathname || '') ? 'archived' : 'active');
 
   /** The lists render their section headings ("Active proposals (0)") once loaded, even when empty. */
   const listLoaded = (text) => /(Active|Submitted|Archived) proposals\s*\(\d+\)/i.test(text || '');
 
-  globalThis.__ugaProposalsScan = { readRows, PAGE, pageOf, listLoaded };
+  globalThis.__ugaProposalsScan = { readRows, PAGE, pageOf, listLoaded, DETAIL, describeProposalPage };
 
   if (typeof document === 'undefined' || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;
 
   // The page is a SPA: poll while it is showing, and report whenever the visible rows change. An
   // empty list is reported too (once it has loaded): "nothing is open any more" is a real answer.
   let last = '';
+  let lastDetail = '';
   setInterval(() => {
+    if (DETAIL.test(location.pathname) && document.visibilityState === 'visible') {
+      const d = describeProposalPage(document, location.pathname);
+      const fingerprint = JSON.stringify(d);
+      if (fingerprint !== lastDetail && (d.controls.length || d.buttons.length)) {
+        lastDetail = fingerprint;
+        try { chrome.runtime.sendMessage({ action: 'diag', kind: 'proposal.page_structure', detail: d }).catch(() => {}); } catch { /* extension reloaded */ }
+      }
+      return;
+    }
+    lastDetail = '';
     if (!PAGE.test(location.pathname) || document.visibilityState !== 'visible') { last = ''; return; }
     const rows = readRows(document);
     const loaded = rows.length > 0 || listLoaded((document.querySelector('main') || document.body).innerText);
