@@ -1,11 +1,12 @@
 {
   "name": "upwork-growth-assistant",
   "version": "1.0.0",
-  "description": "Chrome extension — Connects ROI scorer, AI proposal writer, and profile optimizer for Upwork freelancers.",
+  "description": "Chrome extension \u2014 Connects ROI scorer, AI proposal writer, and profile optimizer for Upwork freelancers.",
   "private": true,
   "scripts": {
     "icons": "node generate_icons.js",
-    "test": "node --test \"test/*.test.mjs\""
+    "test": "node --test \"test/*.test.mjs\"",
+    "package": "node scripts/package.mjs"
   },
   "devDependencies": {
     "sharp": "^0.35.5"

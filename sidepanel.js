@@ -755,7 +755,7 @@ async function loadSettings() {
 
 const CONNECT_ERRORS = {
   invalid_code: "That key isn't valid, has expired, or was already used. Ask your admin for a new one.",
-  member_disabled: "Your access is disabled. Please contact your Exeve admin.",
+  member_disabled: "Your access is disabled. Please contact your account admin.",
   device_limit: "This key's account has reached its device limit. Ask your admin to remove an old device.",
   too_many_attempts: "Too many attempts. Wait a minute and try again.",
   invalid_request: "Please check the key and try again.",
@@ -818,7 +818,7 @@ function setupConnectionUI() {
   btnConnect.addEventListener("click", async () => {
     connError.classList.add("hide");
     if (!connConsent.checked) return showConnError("Please read and accept the notice above to connect.");
-    if (!connCodeInput.value.trim()) return showConnError("Enter the access key from your Exeve admin.");
+    if (!connCodeInput.value.trim()) return showConnError("Enter the access key from your account admin.");
 
     btnConnect.disabled = true;
     connSpinner.classList.remove("hide");

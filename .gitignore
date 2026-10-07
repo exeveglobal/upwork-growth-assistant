@@ -15,3 +15,6 @@ Thumbs.db
 # Claude Code internal context (AI-specific, not needed by end users)
 CLAUDE.md
 .claude/
+
+# Chrome Web Store upload files (npm run package)
+dist/

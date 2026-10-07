@@ -12,9 +12,9 @@ A Chrome Extension (Manifest V3) that sits in the browser side panel and helps f
 | ROI Hub (proposal tracking) | 🔒 | ✅ |
 | AI proposal writer / profile optimizer | 🔜 coming soon | 🔜 coming soon |
 
-Agency members connect with a one-time access key issued by their Exeve admin (Settings → Exeve Connection). Connecting requires accepting a notice that lists what is tracked. If the admin revokes the device or disables the member, the extension drops back to Free and asks for a new key. If the server is unreachable, an existing connection is kept.
+Agency members connect with a one-time access key issued by their account admin (Settings → Exeve Connection). Connecting requires accepting a notice that lists what is tracked. If the admin revokes the device or disables the member, the extension drops back to Free and asks for a new key. If the server is unreachable, an existing connection is kept.
 
-The engine address is in `config.js`; for local development set `devEngineUrl` in `chrome.storage.local` (localhost / 127.0.0.1 only). `manifest.json` lists localhost host permissions for that; remove them in release builds.
+The engine address is in `config.js`; see "Developing against a local engine" below for local development.
 
 ---
 
@@ -47,7 +47,7 @@ The released extension may only talk to `https://ege.exeve.global` (its manifest
 2. Open Chrome → `chrome://extensions/` → enable **Developer Mode**.
 3. Click **Load unpacked** and select the project folder.
 4. Click the extension icon to open the side panel.
-5. Job scoring works immediately. To unlock tracking, open **Settings → Exeve Connection** and enter the access key from your Exeve admin.
+5. Job scoring works immediately. To unlock tracking, open **Settings → Exeve Connection** and enter the access key from your account admin.
 
 ---
 
@@ -55,7 +55,7 @@ The released extension may only talk to `https://ege.exeve.global` (its manifest
 
 | Field | Notes |
 |---|---|
-| **Exeve Connection** | Access key from your admin; connect / disconnect this device |
+| **Exeve Connection** | Access key from your account admin; connect / disconnect this device |
 | **Freelancer Niche, Target Hourly Rate, Achievements Bio** | Stored on this device only; will feed the upcoming AI proposal writer |
 
 Older versions stored AI provider keys and a license key in settings; they are removed from storage automatically.
@@ -387,3 +387,9 @@ npm run icons     # renders icons/icon.svg → icon16.png, icon32.png, icon48.pn
 ```
 
 Requires Node.js and the `sharp` package (installed by `npm install`).
+
+---
+
+## Releasing (Chrome Web Store)
+
+`npm run package` validates the manifest (no remote code, no localhost, size limits), copies only the whitelisted files and writes `dist/upwork-growth-assistant-<version>.zip` for upload. The listing text, images and privacy answers are in `store/`; the privacy policy is `PRIVACY.md`. Bump `version` in `manifest.json` for every release.
